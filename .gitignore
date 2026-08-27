@@ -12,3 +12,7 @@ dist/
 *.key
 *-keypair.json
 wallet*.json
+
+# Generated Solidity outputs and local deployment scratch files.
+contracts/artifacts/
+deployments/*.local.json

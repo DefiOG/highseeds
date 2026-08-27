@@ -72,5 +72,7 @@ In the repository settings, select **GitHub Actions** as the Pages source. No bl
 - `src/assets/crew-operation-*-ui.webp` contains the optimized Crew warehouse hero and non-transferable Operation Seal artwork.
 - `src/assets/demand-dispatch-hero-ui.webp` provides the Daily Demand dispatch scene; `src/assets/growth-progression-ui.webp` is the shared Plant and Position stage strip.
 - `src/App.tsx` contains route views and simulated transaction orchestration.
+- `contracts/src/` contains the Robinhood Chain EVM ownership and position-escrow core; see `contracts/README.md` for its deliberately limited scope and deployment gates.
+- `scripts/deploy-robinhood.mjs` refuses non-Robinhood chain IDs and requires an additional explicit confirmation for mainnet.
 
 Strain THC, genetics, and history inputs are from the project’s High Times source roster. HC prices, yields, contract demand, and progression are game-design values—not real cannabis, securities, or investment data.
