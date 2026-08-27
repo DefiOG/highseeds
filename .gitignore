@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+*.local
+
+# Never publish runtime secrets or deployment wallets.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*-keypair.json
+wallet*.json

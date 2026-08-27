@@ -1,0 +1,29 @@
+{
+  "name": "loud-ledger",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:fast": "vite --mode qa",
+    "build": "tsc -b && vite build --mode production",
+    "build:qa": "tsc -b && vite build --mode qa",
+    "build:file": "tsc -b && vite build --mode file --outDir dist-file",
+    "build:peer": "tsc -b && vite build --mode peer --outDir peer-demo",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "vite": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "typescript": "latest",
+    "vite-plugin-singlefile": "^2.3.3",
+    "vitest": "latest"
+  }
+}
