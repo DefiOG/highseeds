@@ -17,6 +17,9 @@ export const ROBINHOOD_CHAIN_MAINNET = {
 export const LOUD_LEDGER_PROTOCOL_FEE_WEI = 1_000_000_000_000n;
 
 export function getContractAddresses(chainId: number) {
+  if (chainId !== ROBINHOOD_CHAIN_MAINNET.id && chainId !== ROBINHOOD_CHAIN_TESTNET.id) {
+    throw new Error(`Unsupported chain ${chainId}; select Robinhood Chain mainnet or testnet.`);
+  }
   const prefix = chainId === ROBINHOOD_CHAIN_MAINNET.id ? 'VITE_ROBINHOOD_MAINNET' : 'VITE_ROBINHOOD_TESTNET';
   return {
     access: import.meta.env[`${prefix}_ACCESS_ADDRESS`] as `0x${string}` | undefined,

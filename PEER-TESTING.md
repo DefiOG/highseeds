@@ -1,6 +1,6 @@
 # Loud Ledger peer test
 
-Open `peer-demo/index.html` in Chrome, Edge, or Firefox. No install, wallet extension, blockchain account, or real funds are required.
+Extract the release ZIP, then open `START-HERE.html` in Chrome, Edge, or Firefox. Do not run it from inside the ZIP preview. No install, wallet extension, blockchain account, or real funds are required.
 
 The peer build is intentionally accelerated: one six-hour checkpoint takes six seconds. A visible Test Mode banner remains on-screen at all times. Each browser stores an independent local profile; Crew members and outside Work listings are clearly labeled simulation data and are not live multiplayer users.
 
@@ -12,7 +12,7 @@ The peer build is intentionally accelerated: one six-hour checkpoint takes six s
 4. Use **Plant** to start a 24-hour position, then open its Position page and watch the four growth stages advance.
 5. Harvest after four accelerated checkpoints.
 6. Open **Demand board** and deliver matching inventory.
-7. Open **Go to Work**, confirm owned land is visible separately, then start a 50/50 worker position on another operator's demo listing.
+7. Open **Go to Work**, confirm owned land is visible separately, then start a 65/35 worker position on another operator's demo listing.
 8. Inspect **Crew**, **Access**, and **Market Pulse**.
 
 Use **Reset economy v2** in the lower-left corner to restart from the deterministic demo state.
@@ -26,4 +26,4 @@ Use **Reset economy v2** in the lower-left corner to restart from the determinis
 - Which screen felt least trustworthy or most confusing?
 - Would you return for another daily demand board or weekly crew operation?
 
-This is an entertainment simulation. Nothing is deployed on-chain, redeemable, or connected to Robinhood, Solana, a brokerage account, or real funds.
+This is an entertainment simulation. The frontend is not connected to the included experimental contracts, and nothing is deployed on-chain, redeemable, or connected to Robinhood, Solana, a brokerage account, or real funds.

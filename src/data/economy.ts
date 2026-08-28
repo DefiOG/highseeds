@@ -4,8 +4,8 @@ export const ACTIVATION_COST = 4_200;
 export const PROTOCOL_FEE_ETH = 0.000001;
 export const REF_RATE = 2;
 export const WATER_COST_PER_STEP = 10;
-export const WORKER_SHARE = 0.5;
-export const OWNER_SHARE = 0.5;
+export const WORKER_SHARE = 0.65;
+export const OWNER_SHARE = 0.35;
 export const EARLY_EXIT_SHARE = 0.8;
 export const SEASON_LENGTH_DAYS = 42;
 

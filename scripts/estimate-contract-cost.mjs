@@ -1,12 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { ContractFactory, formatEther, parseUnits } from 'ethers';
+import { ContractFactory, formatEther, id, parseUnits } from 'ethers';
 import { network } from 'hardhat';
 
 const connection = await network.create('hardhatRobinhood');
 const [signer] = await connection.ethers.getSigners();
 const artifactRoot = path.join(process.cwd(), 'contracts', 'artifacts');
+const strainIds = [
+  'bruce-banner-3', 'strawberry-cough', 'og-kush', 'super-lemon-haze', 'durban-poison',
+  'sour-diesel', 'northern-lights-5', 'granddaddy-purple', 'super-silver-haze', 'blueberry',
+].map(id);
 
 function artifact(name) {
   return JSON.parse(fs.readFileSync(path.join(artifactRoot, `${name}.json`), 'utf8'));
@@ -32,6 +36,7 @@ const positions = await deploy('LoudPositions', [
   admin,
   await access.contract.getAddress(),
   await plot.contract.getAddress(),
+  strainIds,
 ]);
 const bindingReceipt = await (
   await plot.contract.setPositionManager(await positions.contract.getAddress())

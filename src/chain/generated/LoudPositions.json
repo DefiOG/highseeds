@@ -17,6 +17,11 @@
           "internalType": "address",
           "name": "plotAddress",
           "type": "address"
+        },
+        {
+          "internalType": "bytes32[]",
+          "name": "initialStrains",
+          "type": "bytes32[]"
         }
       ],
       "stateMutability": "nonpayable",
@@ -172,6 +177,17 @@
       "type": "error"
     },
     {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "positionId",
+          "type": "uint256"
+        }
+      ],
+      "name": "PositionNotMature",
+      "type": "error"
+    },
+    {
       "inputs": [],
       "name": "ReentrancyGuardReentrantCall",
       "type": "error"
@@ -314,6 +330,18 @@
         },
         {
           "indexed": false,
+          "internalType": "uint16",
+          "name": "playerShareBps",
+          "type": "uint16"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint16",
+          "name": "plotOwnerShareBps",
+          "type": "uint16"
+        },
+        {
+          "indexed": false,
           "internalType": "bool",
           "name": "worker",
           "type": "bool"
@@ -413,6 +441,25 @@
       "anonymous": false,
       "inputs": [
         {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "strainId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "allowed",
+          "type": "bool"
+        }
+      ],
+      "name": "StrainAllowedChanged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
           "indexed": false,
           "internalType": "address",
           "name": "account",
@@ -457,6 +504,12 @@
           "type": "address"
         },
         {
+          "indexed": true,
+          "internalType": "address",
+          "name": "worker",
+          "type": "address"
+        },
+        {
           "indexed": false,
           "internalType": "bool",
           "name": "enabled",
@@ -465,6 +518,19 @@
       ],
       "name": "WorkerAccessChanged",
       "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "BPS_DENOMINATOR",
+      "outputs": [
+        {
+          "internalType": "uint16",
+          "name": "",
+          "type": "uint16"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
     },
     {
       "inputs": [],
@@ -507,6 +573,19 @@
     },
     {
       "inputs": [],
+      "name": "OWNER_SHARE_BPS",
+      "outputs": [
+        {
+          "internalType": "uint16",
+          "name": "",
+          "type": "uint16"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
       "name": "PAUSER_ROLE",
       "outputs": [
         {
@@ -539,6 +618,19 @@
           "internalType": "bytes32",
           "name": "",
           "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "WORKER_SHARE_BPS",
+      "outputs": [
+        {
+          "internalType": "uint16",
+          "name": "",
+          "type": "uint16"
         }
       ],
       "stateMutability": "view",
@@ -603,6 +695,25 @@
           "internalType": "uint256",
           "name": "positionId",
           "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "strainId",
+          "type": "bytes32"
+        }
+      ],
+      "name": "allowedStrain",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "allowed",
+          "type": "bool"
         }
       ],
       "stateMutability": "view",
@@ -908,6 +1019,16 @@
           "type": "uint8"
         },
         {
+          "internalType": "uint16",
+          "name": "playerShareBps",
+          "type": "uint16"
+        },
+        {
+          "internalType": "uint16",
+          "name": "plotOwnerShareBps",
+          "type": "uint16"
+        },
+        {
           "internalType": "bool",
           "name": "worker",
           "type": "bool"
@@ -978,9 +1099,32 @@
     {
       "inputs": [
         {
+          "internalType": "bytes32",
+          "name": "strainId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bool",
+          "name": "allowed",
+          "type": "bool"
+        }
+      ],
+      "name": "setStrainAllowed",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
           "internalType": "uint256",
           "name": "plotId",
           "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "worker",
+          "type": "address"
         },
         {
           "internalType": "bool",
@@ -989,6 +1133,19 @@
         }
       ],
       "name": "setWorkerAccess",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "positionId",
+          "type": "uint256"
+        }
+      ],
+      "name": "settleMaturePosition",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -1043,6 +1200,11 @@
           "internalType": "uint256",
           "name": "plotId",
           "type": "uint256"
+        },
+        {
+          "internalType": "address",
+          "name": "worker",
+          "type": "address"
         }
       ],
       "name": "workerAccessOpen",

@@ -31,6 +31,14 @@ describe('weekly crew operation', () => {
     expect(Math.ceil(simulatedTotal(sunday) / CREW_DEMO_MEMBERS.length)).toBeLessThanOrEqual(CREW_PERSONAL_CAP_GRAMS);
   });
 
+  it('leaves exactly ten grams for the player in accelerated peer mode', () => {
+    const accelerated = simulatedCrewByStrain(monday, true);
+    expect(Object.values(accelerated).reduce((sum, value) => sum + value, 0)).toBe(490);
+    expect(accelerated['og-kush']).toBe(165);
+    expect(accelerated['sour-diesel']).toBe(160);
+    expect(accelerated.blueberry).toBe(165);
+  });
+
   it('caps accepted inventory at the personal weekly remainder', () => {
     const operation = { ...createCrewOperationState('2026-08-24'), playerGrams: 90 };
     expect(crewAcceptedGrams(operation, monday, 'og-kush', 20, 50)).toBe(10);

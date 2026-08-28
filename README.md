@@ -37,14 +37,14 @@ In the repository settings, select **GitHub Actions** as the Pages source. No bl
 ## Economy v2
 
 - Plant and Work run 24/7 through position-relative six-hour checkpoints.
-- Plots enforce their real 1–32 position capacity through first-class position records.
-- Work uses a transparent 50% worker / 50% owner test split; both sides are accounted.
+- Plots simulate 1/4/8/36 position slots through first-class position records. The 36-slot Farm is a capacity preview in the peer build.
+- Work uses a transparent 65% worker / 35% owner test split because the worker funds upkeep and simulated fees.
 - Long-term maturity multipliers are flattened to 1.00×–1.25×.
 - Strains trade production volume against customer value instead of sharing one output rate.
 - Three finite daily contracts replace unlimited repeated NPC sales.
 - Auto-water is the safe default; reserves are prepaid and unused HC is refunded.
 - Pre-maturity claim-clicks were removed. Harvest settles lazily at completion or at the universal 80% early-exit rate.
-- Operator Reputation and season XP are account-bound progression.
+- Operator Reputation and season XP are account-bound prototype scores. Access rarity and XP provide the displayed grow multipliers.
 - Crew Operations use three bounded weekly crop bays, a 20% personal cap, labeled simulated members, and deterministic cosmetic progression without creating another HC faucet.
 - Market Pulse remains read-only and has no game-economy linkage.
 

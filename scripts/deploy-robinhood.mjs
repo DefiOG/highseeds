@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { ContractFactory, JsonRpcProvider, Wallet } from 'ethers';
+import { ContractFactory, JsonRpcProvider, Wallet, id } from 'ethers';
 
 const CHAINS = {
   46630: { name: 'Robinhood Chain Testnet', manifest: 'robinhood-testnet.json' },
@@ -31,6 +31,10 @@ if (admin.toLowerCase() !== wallet.address.toLowerCase()) {
 const accessBaseUri = process.env.ACCESS_BASE_URI || '';
 const plotBaseUri = process.env.PLOT_BASE_URI || '';
 const artifactRoot = path.join(process.cwd(), 'contracts', 'artifacts');
+const strainIds = [
+  'bruce-banner-3', 'strawberry-cough', 'og-kush', 'super-lemon-haze', 'durban-poison',
+  'sour-diesel', 'northern-lights-5', 'granddaddy-purple', 'super-silver-haze', 'blueberry',
+].map(id);
 
 function artifact(name) {
   return JSON.parse(fs.readFileSync(path.join(artifactRoot, `${name}.json`), 'utf8'));
@@ -55,7 +59,7 @@ async function deploy(name, args) {
 console.log(`Deploying to ${chain.name} (${chainId}) from ${wallet.address}`);
 const access = await deploy('LoudAccess', [admin, accessBaseUri]);
 const plot = await deploy('LoudPlot', [admin, plotBaseUri]);
-const positions = await deploy('LoudPositions', [admin, access.address, plot.address]);
+const positions = await deploy('LoudPositions', [admin, access.address, plot.address, strainIds]);
 
 const plotContract = plot.contract.connect(wallet);
 const binding = await plotContract.setPositionManager(positions.address);
@@ -69,6 +73,10 @@ const manifest = {
   admin,
   protocolFeeWei: '1000000000000',
   checkpointSeconds: 21600,
+  configVersion: 2,
+  workerShareBps: 6500,
+  plotOwnerShareBps: 3500,
+  allowedStrainIds: strainIds,
   contracts: {
     LoudAccess: { address: access.address, transactionHash: access.transactionHash, gasUsed: access.gasUsed },
     LoudPlot: { address: plot.address, transactionHash: plot.transactionHash, gasUsed: plot.gasUsed },

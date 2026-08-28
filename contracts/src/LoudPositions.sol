@@ -24,7 +24,10 @@ contract LoudPositions is AccessControl, Pausable, ReentrancyGuard, IERC721Recei
 
     uint256 public constant PROTOCOL_FEE = 0.000001 ether;
     uint64 public constant CHECKPOINT_SECONDS = 6 hours;
-    uint32 public constant CONFIG_VERSION = 1;
+    uint32 public constant CONFIG_VERSION = 2;
+    uint16 public constant BPS_DENOMINATOR = 10_000;
+    uint16 public constant WORKER_SHARE_BPS = 6_500;
+    uint16 public constant OWNER_SHARE_BPS = 3_500;
 
     struct Position {
         address player;
@@ -36,6 +39,8 @@ contract LoudPositions is AccessControl, Pausable, ReentrancyGuard, IERC721Recei
         uint64 closedAt;
         uint8 durationSteps;
         uint8 settledSteps;
+        uint16 playerShareBps;
+        uint16 plotOwnerShareBps;
         bool worker;
         bool closed;
     }
@@ -51,12 +56,14 @@ contract LoudPositions is AccessControl, Pausable, ReentrancyGuard, IERC721Recei
     error WorkerAccessClosed(uint256 plotId);
     error NotPositionPlayer(uint256 positionId);
     error PositionAlreadyClosed(uint256 positionId);
+    error PositionNotMature(uint256 positionId);
     error UnexpectedAccessTransfer();
     error AccessIsActive(uint256 accessId);
     error NothingToWithdraw();
     error FeeTransferFailed();
 
-    event WorkerAccessChanged(uint256 indexed plotId, address indexed plotOwner, bool enabled);
+    event WorkerAccessChanged(uint256 indexed plotId, address indexed plotOwner, address indexed worker, bool enabled);
+    event StrainAllowedChanged(bytes32 indexed strainId, bool allowed);
     event PositionOpened(
         uint256 indexed positionId,
         address indexed player,
@@ -65,6 +72,8 @@ contract LoudPositions is AccessControl, Pausable, ReentrancyGuard, IERC721Recei
         uint256 plotId,
         bytes32 strainId,
         uint8 durationSteps,
+        uint16 playerShareBps,
+        uint16 plotOwnerShareBps,
         bool worker,
         uint64 startedAt,
         uint32 configVersion
@@ -88,27 +97,42 @@ contract LoudPositions is AccessControl, Pausable, ReentrancyGuard, IERC721Recei
     mapping(uint256 positionId => Position position) public positions;
     mapping(uint256 accessId => uint256 positionId) public activePositionForAccess;
     mapping(uint256 plotId => uint256 count) public activePositionCountByPlot;
-    mapping(uint256 plotId => address approvingOwner) private _workerAccessOwner;
+    mapping(uint256 plotId => mapping(address worker => address approvingOwner)) private _workerApprovalOwner;
+    mapping(bytes32 strainId => bool allowed) public allowedStrain;
     address private _expectedAccessFrom;
     uint256 private _expectedAccessId;
 
-    constructor(address admin, address accessAddress, address plotAddress) {
+    constructor(address admin, address accessAddress, address plotAddress, bytes32[] memory initialStrains) {
         if (admin == address(0) || accessAddress == address(0) || plotAddress == address(0)) revert InvalidAddress();
+        if (initialStrains.length == 0) revert InvalidStrain();
         accessToken = ILoudAccess(accessAddress);
         plotToken = ILoudPlot(plotAddress);
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(PAUSER_ROLE, admin);
         _grantRole(TREASURER_ROLE, admin);
+        for (uint256 i = 0; i < initialStrains.length; i++) {
+            if (initialStrains[i] == bytes32(0)) revert InvalidStrain();
+            allowedStrain[initialStrains[i]] = true;
+            emit StrainAllowedChanged(initialStrains[i], true);
+        }
     }
 
-    function setWorkerAccess(uint256 plotId, bool enabled) external whenNotPaused {
+    function setWorkerAccess(uint256 plotId, address worker, bool enabled) external whenNotPaused {
         if (plotToken.ownerOf(plotId) != msg.sender) revert InvalidMode();
-        _workerAccessOwner[plotId] = enabled ? msg.sender : address(0);
-        emit WorkerAccessChanged(plotId, msg.sender, enabled);
+        if (worker == address(0) || worker == msg.sender) revert InvalidAddress();
+        _workerApprovalOwner[plotId][worker] = enabled ? msg.sender : address(0);
+        emit WorkerAccessChanged(plotId, msg.sender, worker, enabled);
     }
 
-    function workerAccessOpen(uint256 plotId) public view returns (bool) {
-        return _workerAccessOwner[plotId] != address(0) && plotToken.ownerOf(plotId) == _workerAccessOwner[plotId];
+    function workerAccessOpen(uint256 plotId, address worker) public view returns (bool) {
+        return _workerApprovalOwner[plotId][worker] != address(0)
+            && plotToken.ownerOf(plotId) == _workerApprovalOwner[plotId][worker];
+    }
+
+    function setStrainAllowed(bytes32 strainId, bool allowed) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (strainId == bytes32(0)) revert InvalidStrain();
+        allowedStrain[strainId] = allowed;
+        emit StrainAllowedChanged(strainId, allowed);
     }
 
     function openPosition(
@@ -120,14 +144,14 @@ contract LoudPositions is AccessControl, Pausable, ReentrancyGuard, IERC721Recei
     ) external payable whenNotPaused nonReentrant returns (uint256 positionId) {
         _requireProtocolFee();
         if (!_validDuration(durationSteps)) revert InvalidDuration(durationSteps);
-        if (strainId == bytes32(0)) revert InvalidStrain();
+        if (!allowedStrain[strainId]) revert InvalidStrain();
         if (accessToken.ownerOf(accessId) != msg.sender) revert InvalidMode();
         if (!accessToken.isActivated(accessId)) revert AccessNotActivated(accessId);
         if (activePositionForAccess[accessId] != 0) revert AccessAlreadyInUse(accessId);
 
         address plotOwner = plotToken.ownerOf(plotId);
         if (worker) {
-            if (plotOwner == msg.sender || !workerAccessOpen(plotId)) revert WorkerAccessClosed(plotId);
+            if (plotOwner == msg.sender || !workerAccessOpen(plotId, msg.sender)) revert WorkerAccessClosed(plotId);
         } else if (plotOwner != msg.sender) {
             revert InvalidMode();
         }
@@ -145,6 +169,8 @@ contract LoudPositions is AccessControl, Pausable, ReentrancyGuard, IERC721Recei
             closedAt: 0,
             durationSteps: durationSteps,
             settledSteps: 0,
+            playerShareBps: worker ? WORKER_SHARE_BPS : BPS_DENOMINATOR,
+            plotOwnerShareBps: worker ? OWNER_SHARE_BPS : 0,
             worker: worker,
             closed: false
         });
@@ -165,6 +191,8 @@ contract LoudPositions is AccessControl, Pausable, ReentrancyGuard, IERC721Recei
             plotId,
             strainId,
             durationSteps,
+            worker ? WORKER_SHARE_BPS : BPS_DENOMINATOR,
+            worker ? OWNER_SHARE_BPS : 0,
             worker,
             uint64(block.timestamp),
             CONFIG_VERSION
@@ -177,6 +205,15 @@ contract LoudPositions is AccessControl, Pausable, ReentrancyGuard, IERC721Recei
         if (position.player != msg.sender) revert NotPositionPlayer(positionId);
         if (position.closed) revert PositionAlreadyClosed(positionId);
         accruedFees += msg.value;
+        _release(positionId, position, false);
+    }
+
+    /// @notice Releases a mature position if its player is unavailable, preventing permanent plot lockup.
+    /// @dev The escrowed Access NFT is always returned to the player; this function never charges a fee.
+    function settleMaturePosition(uint256 positionId) external whenNotPaused nonReentrant {
+        Position storage position = positions[positionId];
+        if (position.player == address(0) || position.closed) revert PositionAlreadyClosed(positionId);
+        if (completedSteps(positionId) != position.durationSteps) revert PositionNotMature(positionId);
         _release(positionId, position, false);
     }
 

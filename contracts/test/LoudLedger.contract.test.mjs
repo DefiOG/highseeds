@@ -7,6 +7,16 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const FEE = parseEther('0.000001');
 const SIX_HOURS = 6 * 60 * 60;
+const STRAINS = [
+  'og-kush',
+  'sour-diesel',
+  'blueberry',
+  'granddaddy-purple',
+  'durban-poison',
+  'strawberry-cough',
+  'northern-lights-5',
+  'super-lemon-haze',
+].map((strain) => keccak256(toUtf8Bytes(strain)));
 
 function artifact(name) {
   return JSON.parse(
@@ -43,6 +53,7 @@ describe('Robinhood Chain contract core', () => {
       await admin.getAddress(),
       await access.getAddress(),
       await plot.getAddress(),
+      STRAINS,
     ]);
     await (await plot.connect(admin).setPositionManager(await positions.getAddress())).wait();
   }, 30_000);
@@ -148,8 +159,8 @@ describe('Robinhood Chain contract core', () => {
       positions.connect(worker).openPosition(1, 1, strain, 2, true, { value: FEE }),
     ).rejects.toThrow();
 
-    await (await positions.connect(owner).setWorkerAccess(1, true)).wait();
-    expect(await positions.workerAccessOpen(1)).toBe(true);
+    await (await positions.connect(owner).setWorkerAccess(1, await worker.getAddress(), true)).wait();
+    expect(await positions.workerAccessOpen(1, await worker.getAddress())).toBe(true);
     // Explicit gas limit bypasses Ganache's stale estimate cache after the intentionally reverted call above.
     await (
       await positions.connect(worker).openPosition(1, 1, strain, 2, true, { value: FEE, gasLimit: 3_000_000 })
@@ -158,6 +169,51 @@ describe('Robinhood Chain contract core', () => {
     expect(position.player).toBe(await worker.getAddress());
     expect(position.plotOwner).toBe(await owner.getAddress());
     expect(position.worker).toBe(true);
+    expect(position.playerShareBps).toBe(6500n);
+    expect(position.plotOwnerShareBps).toBe(3500n);
+  });
+
+  it('uses per-worker approval rather than opening a plot to every Access holder', async () => {
+    await (await access.connect(admin).mint(await worker.getAddress(), 0, true)).wait();
+    await (await access.connect(admin).mint(await recipient.getAddress(), 0, true)).wait();
+    await (await plot.connect(admin).mint(await owner.getAddress(), 1)).wait();
+    await (await access.connect(worker).approve(await positions.getAddress(), 1)).wait();
+    await (await access.connect(recipient).approve(await positions.getAddress(), 2)).wait();
+    await (await positions.connect(owner).setWorkerAccess(1, await worker.getAddress(), true)).wait();
+
+    expect(await positions.workerAccessOpen(1, await worker.getAddress())).toBe(true);
+    expect(await positions.workerAccessOpen(1, await recipient.getAddress())).toBe(false);
+    await expect(
+      positions.connect(recipient).openPosition(2, 1, STRAINS[0], 1, true, { value: FEE }),
+    ).rejects.toThrow();
+  });
+
+  it('lets anyone settle a mature worker position and releases the plot without taking the worker Access', async () => {
+    await (await access.connect(admin).mint(await worker.getAddress(), 0, true)).wait();
+    await (await plot.connect(admin).mint(await owner.getAddress(), 1)).wait();
+    await (await access.connect(worker).approve(await positions.getAddress(), 1)).wait();
+    await (await positions.connect(owner).setWorkerAccess(1, await worker.getAddress(), true)).wait();
+    await (await positions.connect(worker).openPosition(1, 1, STRAINS[0], 1, true, { value: FEE })).wait();
+
+    await expect(positions.connect(owner).settleMaturePosition(1)).rejects.toThrow();
+    await connection.provider.request({ method: 'evm_increaseTime', params: [SIX_HOURS] });
+    await connection.provider.request({ method: 'evm_mine', params: [] });
+    await (await positions.connect(recipient).settleMaturePosition(1)).wait();
+
+    expect(await access.ownerOf(1)).toBe(await worker.getAddress());
+    expect(await positions.activePositionCountByPlot(1)).toBe(0n);
+    await (await plot.connect(owner).transferFrom(await owner.getAddress(), await recipient.getAddress(), 1)).wait();
+  });
+
+  it('rejects unknown strains and permits an admin to extend the registry', async () => {
+    await mintOwnerPair();
+    const newStrain = keccak256(toUtf8Bytes('future-strain'));
+    await expect(
+      positions.connect(owner).openPosition(1, 1, newStrain, 1, false, { value: FEE }),
+    ).rejects.toThrow();
+    await (await positions.connect(admin).setStrainAllowed(newStrain, true)).wait();
+    await (await positions.connect(owner).openPosition(1, 1, newStrain, 1, false, { value: FEE })).wait();
+    expect(await positions.allowedStrain(newStrain)).toBe(true);
   });
 
   it('always lets the player recover escrowed Access for free during a pause', async () => {

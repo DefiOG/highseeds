@@ -1,4 +1,5 @@
 import type { CrewOperationState } from '../types';
+import { FAST_TIME_ENABLED } from '../lib/clock';
 
 const DAY_MS = 86_400_000;
 
@@ -54,7 +55,14 @@ export function activeCrewOperation(operation: CrewOperationState, now: number) 
   return operation.weekId === week.id ? operation : createCrewOperationState(week.id);
 }
 
-export function simulatedCrewByStrain(now: number) {
+export function simulatedCrewByStrain(now: number, accelerated = FAST_TIME_ENABLED) {
+  if (accelerated) {
+    return {
+      'og-kush': 165,
+      'sour-diesel': 160,
+      blueberry: 165,
+    };
+  }
   const week = crewWeekWindow(now);
   const elapsedDays = Math.min(6, Math.max(0, Math.floor((now - week.start) / DAY_MS)));
   return Object.fromEntries(CREW_BINS.map((bin) => [

@@ -52,10 +52,11 @@ describe('economy v2 formulas', () => {
     expect(longDaily / shortDaily).toBeCloseTo(1.25);
   });
 
-  it('conserves worker and owner production at an exact 50/50 split', () => {
+  it('conserves worker and owner production at an exact 65/35 split', () => {
     const metrics = getPositionMetrics(position({ mode: 'worker', duration: '6h' }), common, pot, 6 * 60 * 60 * 1_000);
-    expect(WORKER_SHARE).toBe(0.5);
-    expect(metrics.playerBase).toBeCloseTo(metrics.ownerBase);
+    expect(WORKER_SHARE).toBe(0.65);
+    expect(metrics.playerBase / metrics.grossBase).toBeCloseTo(0.65);
+    expect(metrics.ownerBase / metrics.grossBase).toBeCloseTo(0.35);
     expect(metrics.playerBase + metrics.ownerBase).toBeCloseTo(metrics.grossBase);
   });
 
@@ -63,7 +64,7 @@ describe('economy v2 formulas', () => {
     const owner = projectedMatureYield(rare, room, 'og-kush', '24h', 'owner');
     const worker = projectedMatureYield(rare, room, 'og-kush', '24h', 'worker');
     expect(owner).toBeGreaterThan(worker);
-    expect(worker / owner).toBeCloseTo(0.5);
+    expect(worker / owner).toBeCloseTo(0.65);
   });
 
   it('never lets early exit exceed natural completion', () => {
