@@ -26,7 +26,7 @@ npm.cmd run build:peer
 
 ## GitHub Pages
 
-The Pages workflow runs the test suite, builds `dist`, and publishes it whenever `main` is updated. Production navigation uses hash routes so direct links work under a GitHub repository subpath.
+The Pages workflow runs the test suite, builds the accelerated `peer-demo`, and publishes it whenever `main` is updated. A persistent Test Mode banner identifies the public prototype, where six-hour checkpoints take six seconds. Navigation uses hash routes so direct links work under a GitHub repository subpath.
 
 In the repository settings, select **GitHub Actions** as the Pages source. No blockchain key, seed phrase, private key, or funded deployer wallet belongs in this repository or its Pages build.
 

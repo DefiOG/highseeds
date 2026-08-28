@@ -36,8 +36,8 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Build static site
-        run: npm run build
+      - name: Build accelerated peer site
+        run: npm run build:peer
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -45,7 +45,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: peer-demo
 
       - name: Deploy to GitHub Pages
         id: deployment
