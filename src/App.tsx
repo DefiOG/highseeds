@@ -19,6 +19,7 @@ import {
   Leaf,
   LockKeyhole,
   Menu,
+  Minus,
   PackageOpen,
   Plus,
   Radio,
@@ -36,7 +37,7 @@ import {
   Warehouse,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import landFarm from './assets/land-farm-ui.png';
 import landHouse from './assets/land-house-ui.png';
 import landPot from './assets/land-pot-ui.png';
@@ -169,6 +170,10 @@ export default function App() {
   const [path, setPath] = useState(routePath);
   const [now, setNow] = useState(Date.now());
   const [mobileNav, setMobileNav] = useState(false);
+  const [windowMinimized, setWindowMinimized] = useState(false);
+  const [windowOpen, setWindowOpen] = useState(true);
+  const [windowOffset, setWindowOffset] = useState({ x: 0, y: 0 });
+  const windowDrag = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
 
@@ -195,7 +200,30 @@ export default function App() {
     else window.history.pushState({}, '', next);
     setPath(next);
     setMobileNav(false);
+    setWindowMinimized(false);
+    setWindowOpen(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const beginWindowDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (window.innerWidth <= 960 || (event.target as HTMLElement).closest('button')) return;
+    windowDrag.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: windowOffset.x, originY: windowOffset.y };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const moveWindow = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = windowDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    setWindowOffset({
+      x: Math.max(-90, Math.min(90, drag.originX + event.clientX - drag.startX)),
+      y: Math.max(-24, Math.min(100, drag.originY + event.clientY - drag.startY)),
+    });
+  };
+
+  const endWindowDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (windowDrag.current?.pointerId !== event.pointerId) return;
+    windowDrag.current = null;
+    event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
   const notify = (title: string, body: string, kind: ToastState['kind'] = 'success') => setToast({ id: Date.now(), title, body, kind });
@@ -519,28 +547,53 @@ export default function App() {
 
   const totalGrams = Object.values(state.grams).reduce((sum, value) => sum + value, 0);
   const season = currentSeason(now);
+  const currentNav = navItems.find((item) => item.path === '/' ? path === '/' : path.startsWith(item.path)) ?? navItems[0];
+  const currentTitle = positionMatch ? 'Grow monitor' : currentNav.label;
+  const CurrentIcon = positionMatch ? Sprout : currentNav.icon;
+  const systemTime = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(now);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell loud-os">
       {FAST_TIME_ENABLED && <div className="qa-banner"><TimerReset size={15} /> TEST MODE — SIX-HOUR CHECKPOINTS COMPRESSED TO SIX SECONDS</div>}
       <div className="simulation-banner"><div><span className="status-dot" /> Local simulation — not connected to Robinhood Chain <span className="banner-divider" /> No deployed contracts · No real funds · No promised returns</div><div className="network-label"><ShieldCheck size={14} /> Economy v2</div></div>
+      <div className="desktop-surface" style={{ backgroundImage: `linear-gradient(180deg, rgba(4, 12, 9, .08), rgba(3, 8, 7, .62)), url(${landFarm})` }}>
+        <div className="desktop-shortcuts" aria-label="LoudOS applications">
+          {navItems.map((item) => {
+            const active = item.path === '/' ? path === '/' : path.startsWith(item.path);
+            return <button key={item.path} className={active && windowOpen && !windowMinimized ? 'desktop-shortcut active' : 'desktop-shortcut'} onDoubleClick={() => go(item.path)} onClick={() => go(item.path)}><span><item.icon size={25} /></span><strong>{item.label}</strong>{item.lab && <small>LAB</small>}</button>;
+          })}
+        </div>
+        <div className="desktop-watermark"><Leaf size={25} /><span><strong>LOUDOS</strong><small>GROWTH OPERATING SYSTEM 4.20</small></span></div>
+      </div>
       <aside className={mobileNav ? 'sidebar open' : 'sidebar'}>
         <button className="mobile-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><X size={20} /></button>
-        <button className="brand" onClick={() => go('/')}><span className="brand-mark"><Leaf size={20} /></span><span><strong>LOUD LEDGER</strong><small>GROWTH PROTOCOL</small></span></button>
-        <nav><span className="nav-section">24/7 operation</span>{navItems.map((item) => {
+        <button className="brand" onClick={() => go('/')}><span className="brand-mark"><Leaf size={20} /></span><span><strong>LOUDOS</strong><small>LOUD LEDGER SYSTEM</small></span></button>
+        <div className="start-user"><span>LL</span><div><strong>Local Operator</strong><small>SIMULATION SESSION</small></div></div>
+        <nav><span className="nav-section">Applications</span>{navItems.map((item) => {
           const active = item.path === '/' ? path === '/' : path.startsWith(item.path);
           return <button key={item.path} className={active ? 'nav-item active' : 'nav-item'} onClick={() => go(item.path)}><item.icon size={17} /><span>{item.label}</span>{item.lab && <small className="nav-lab-badge">LAB</small>}{active && <span className="active-pip" />}</button>;
         })}</nav>
         <div className="protocol-card"><div className="protocol-card-top"><Trophy size={15} /><span>{season.id} · Day {season.day}/{season.totalDays}</span></div><strong>{formatNumber(state.seasonXp, 0)} season XP</strong><p>Daily demand resets at 00:00 UTC. Ownership and Access XP do not.</p><div className="protocol-progress"><span style={{ width: `${(season.day / season.totalDays) * 100}%` }} /></div></div>
         <button className="reset-button" onClick={resetSimulation}><RotateCcw size={15} /> Reset economy v2</button>
       </aside>
-      <main className="main-shell">
-        <header className="topbar"><button className="mobile-menu" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Menu size={21} /></button><div className="topbar-metrics"><TopMetric label="Reputation" value={formatNumber(state.reputation, 0)} tone="positive" /><TopMetric label="Active positions" value={String(state.positions.length)} /><TopMetric label="Inventory" value={`${formatNumber(totalGrams)}g`} /></div>{state.walletConnected ? <button className="wallet-connected"><span className="network-dot" /><span><small>SIMULATED WALLET</small>{truncateAddress(state.address)}</span><ChevronRight size={16} /></button> : <button className="button primary compact" onClick={connectWallet}><Wallet size={16} /> Connect wallet</button>}</header>
+      <main className={!windowOpen ? 'main-shell closed' : windowMinimized ? 'main-shell minimized' : 'main-shell'} style={{ '--window-x': `${windowOffset.x}px`, '--window-y': `${windowOffset.y}px` } as CSSProperties}>
+        <div className="os-titlebar" onPointerDown={beginWindowDrag} onPointerMove={moveWindow} onPointerUp={endWindowDrag} onPointerCancel={endWindowDrag}>
+          <div className="os-window-title"><span><CurrentIcon size={15} /></span><strong>{currentTitle} — Loud Ledger</strong></div>
+          <div className="os-window-controls"><button onClick={() => setWindowMinimized(true)} aria-label="Minimize window"><Minus size={15} /></button><button className="os-close" onClick={() => setWindowOpen(false)} aria-label="Close window"><X size={14} /></button></div>
+        </div>
+        <div className="os-menubar"><span>File</span><span>Operation</span><span>Inventory</span><span>Help</span><small>LOCAL://LOUD-LEDGER{path === '/' ? '/OVERVIEW' : path.toUpperCase()}</small></div>
+        <header className="topbar"><button className="mobile-menu" onClick={() => setMobileNav(true)} aria-label="Open applications"><Menu size={21} /></button><div className="topbar-metrics"><TopMetric label="Reputation" value={formatNumber(state.reputation, 0)} tone="positive" /><TopMetric label="Active positions" value={String(state.positions.length)} /><TopMetric label="Inventory" value={`${formatNumber(totalGrams)}g`} /></div>{state.walletConnected ? <button className="wallet-connected"><span className="network-dot" /><span><small>SIMULATED WALLET</small>{truncateAddress(state.address)}</span><ChevronRight size={16} /></button> : <button className="button primary compact" onClick={connectWallet}><Wallet size={16} /> Connect wallet</button>}</header>
         <div className="page-wrap">{page}</div>
       </main>
+      <footer className="os-taskbar">
+        <button className={mobileNav ? 'os-start active' : 'os-start'} onClick={() => setMobileNav((open) => !open)}><Leaf size={17} /><strong>start</strong></button>
+        <span className="taskbar-divider" />
+        {windowOpen && <button className={windowMinimized ? 'task-app' : 'task-app active'} onClick={() => setWindowMinimized(false)}><CurrentIcon size={15} /><span>{currentTitle}</span></button>}
+        <div className="taskbar-tray"><span className="network-dot" /><Radio size={14} /><span>LOCAL</span><strong>{systemTime}</strong></div>
+      </footer>
       {confirm && <ConfirmationDialog details={confirm} close={() => setConfirm(null)} />}
       {toast && <Toast toast={toast} close={() => setToast(null)} />}
-      {mobileNav && <button className="nav-scrim" onClick={() => setMobileNav(false)} aria-label="Close navigation" />}
+      {mobileNav && <button className="nav-scrim" onClick={() => setMobileNav(false)} aria-label="Close applications menu" />}
     </div>
   );
 }
