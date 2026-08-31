@@ -57,6 +57,8 @@ In the repository settings, select **GitHub Actions** as the Pages source. No bl
 - `/work` — landless worker contracts
 - `/contracts` — finite rotating demand board
 - `/crew` — bounded weekly Crew Operation with requested crops, milestones, roster, and cosmetic reward
+- `/mint` — zero-cost local mint/reveal simulation with explicit undeployed-contract status
+- `/gallery` — searchable, paginated registry of all 420 identities with rarity distribution and utility disclosures
 - `/access` — 420-token Genesis seed vault, functional activation, rarity, and XP
 - `/land` — four visual land tiers, capped by the 36-slot commercial Farm
 - `/positions/:id` — live checkpoint, care, and settlement view

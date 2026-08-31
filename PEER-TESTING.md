@@ -13,7 +13,9 @@ The peer build is intentionally accelerated: one six-hour checkpoint takes six s
 5. Harvest after four accelerated checkpoints.
 6. Open **Demand board** and deliver matching inventory.
 7. Open **Go to Work**, confirm owned land is visible separately, then start a 65/35 worker position on another operator's demo listing.
-8. Inspect **Crew**, **Access**, and **Market Pulse**.
+8. Open **Mint Access**, complete one zero-cost local reveal, and confirm the new credential appears in **Access NFTs**.
+9. Use **Gallery** to filter the collection by rarity and inspect a seed at full size.
+10. Inspect **Crew** and **Market Pulse**.
 
 Use **Reset economy v2** in the lower-left corner to restart from the deterministic demo state.
 

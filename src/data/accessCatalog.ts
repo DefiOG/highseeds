@@ -3,6 +3,7 @@ import manifestJson from './catalog_manifest.json';
 import type { Rarity } from '../types';
 
 export const ACCESS_COLLECTION_SIZE = 420 as const;
+export const ACCESS_RARITY_ORDER: Rarity[] = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary'];
 
 export type SeedPattern = 'tiger' | 'mottled' | 'webbed' | 'solid' | 'heavycap';
 export type SeedColor = 'charcoal' | 'espresso' | 'chestnut' | 'sandy' | 'slategray' | 'taupe' | 'mahogany' | 'rust' | 'olivetan';
@@ -63,7 +64,22 @@ export function getAccessCatalogEntry(tokenId: number) {
   return catalogById.get(tokenId);
 }
 
+export function availableAccessCatalog(ownedTokenIds: Iterable<number>) {
+  const owned = new Set(ownedTokenIds);
+  return ACCESS_CATALOG.filter((entry) => !owned.has(entry.id));
+}
+
+export function pickSimulatedAccessMint(ownedTokenIds: Iterable<number>, randomValue = Math.random()) {
+  const available = availableAccessCatalog(ownedTokenIds);
+  if (!available.length) return undefined;
+  const normalizedRandom = Number.isFinite(randomValue) ? Math.min(Math.max(randomValue, 0), 0.999999999999) : 0;
+  return available[Math.floor(normalizedRandom * available.length)];
+}
+
+export function accessRarityCount(rarity: Rarity) {
+  return ACCESS_CATALOG_MANIFEST.rarity_tiers[rarity];
+}
+
 export function formatCatalogLabel(value: string) {
   return value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
-

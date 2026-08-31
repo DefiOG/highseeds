@@ -48,7 +48,16 @@ import demandDispatchHero from './assets/demand-dispatch-hero-ui.webp';
 import growthProgression from './assets/growth-progression-ui.webp';
 import pixelGrowRoom from './assets/pixel-grow-room-ui.png';
 import { AccessSeedArt } from './components/AccessSeedArt';
-import { ACCESS_COLLECTION_SIZE, formatCatalogLabel, getAccessCatalogEntry } from './data/accessCatalog';
+import {
+  ACCESS_CATALOG,
+  ACCESS_COLLECTION_SIZE,
+  ACCESS_RARITY_ORDER,
+  accessRarityCount,
+  availableAccessCatalog,
+  formatCatalogLabel,
+  getAccessCatalogEntry,
+  pickSimulatedAccessMint,
+} from './data/accessCatalog';
 import {
   activeCrewOperation,
   CREW_COMPLETION_REPUTATION,
@@ -101,7 +110,7 @@ import {
   xpBonus,
 } from './lib/engine';
 import { resetSimulation, useGameState } from './state/game';
-import type { AccessNft, DurationKey, GameState, Plot, PlotTierKey, Position, ToastState } from './types';
+import type { AccessNft, DurationKey, GameState, Plot, PlotTierKey, Position, Rarity, ToastState } from './types';
 
 type ConfirmState = {
   eyebrow: string;
@@ -119,6 +128,8 @@ const navItems = [
   { path: '/work', label: 'Go to work', icon: BriefcaseBusiness },
   { path: '/contracts', label: 'Demand board', icon: Store },
   { path: '/crew', label: 'Crew', icon: UsersRound },
+  { path: '/mint', label: 'Mint Access', icon: PackageOpen },
+  { path: '/gallery', label: 'Gallery', icon: Database },
   { path: '/access', label: 'Access NFTs', icon: Hexagon },
   { path: '/land', label: 'Land', icon: LandPlot },
   { path: '/market-lab', label: 'Market pulse', icon: BarChart3, lab: true },
@@ -178,6 +189,7 @@ export default function App() {
   const windowDrag = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [lastMintedId, setLastMintedId] = useState<number | null>(null);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
@@ -264,6 +276,43 @@ export default function App() {
         }));
         setConfirm(null);
         notify('Access activated', 'It can now Plant or Go to Work.');
+      },
+    });
+  };
+
+  const mintAccess = () => {
+    if (!requireWallet()) return;
+    const identity = pickSimulatedAccessMint(state.nfts.map((nft) => nft.tokenId));
+    if (!identity) return notify('Local collection complete', 'This browser already holds every Genesis identity.', 'info');
+    const remainingAfter = availableAccessCatalog(state.nfts.map((nft) => nft.tokenId)).length - 1;
+    setConfirm({
+      eyebrow: 'Prototype mint reveal',
+      title: 'Generate one local Access credential',
+      body: 'This demonstration selects one unowned identity from the fixed catalog. It does not call a contract, charge ETH, reserve a production NFT, or establish future mint terms.',
+      lines: [
+        { label: 'Prototype price', value: '0 ETH' },
+        { label: 'Selection', value: 'One unowned catalog identity' },
+        { label: 'Local pool after', value: `${remainingAfter} identities` },
+      ],
+      confirmLabel: 'Reveal simulated mint',
+      onConfirm: () => {
+        setState((current) => {
+          if (current.nfts.some((nft) => nft.tokenId === identity.id)) return current;
+          const minted: AccessNft = {
+            tokenId: identity.id,
+            rarity: identity.rarity,
+            xp: 0,
+            activated: false,
+          };
+          return {
+            ...current,
+            nfts: [...current.nfts, minted].sort((left, right) => left.tokenId - right.tokenId),
+            activity: [createActivity(`Access #${identity.id} revealed`, `${identity.name} · ${identity.rarity} · local simulation only.`), ...current.activity],
+          };
+        });
+        setLastMintedId(identity.id);
+        setConfirm(null);
+        notify(`${identity.rarity} Access revealed`, `${identity.name} #${identity.id} was added to this browser only.`);
       },
     });
   };
@@ -532,7 +581,7 @@ export default function App() {
 
   const positionMatch = path.match(/^\/positions\/(.+)$/);
   const plantMatch = path.match(/^\/plant(?:\/(\d+))?$/);
-  const context = { state, now, go, activateNft, buyPlot, openPosition, careForPosition, closePosition, fulfillOrder, contributeCrew, claimCrewReward, completePractice };
+  const context = { state, now, go, activateNft, mintAccess, buyPlot, openPosition, careForPosition, closePosition, fulfillOrder, contributeCrew, claimCrewReward, completePractice };
   let page: ReactNode;
   if (positionMatch) {
     const position = state.positions.find((item) => item.id === positionMatch[1]);
@@ -542,7 +591,9 @@ export default function App() {
   else if (path === '/work') page = <WorkView {...context} />;
   else if (path === '/contracts') page = <ContractsView {...context} />;
   else if (path === '/crew') page = <CrewView {...context} />;
-  else if (path === '/access') page = <AccessView state={state} activateNft={activateNft} />;
+  else if (path === '/mint') page = <MintView state={state} go={go} mintAccess={mintAccess} lastMintedId={lastMintedId} />;
+  else if (path === '/gallery') page = <GalleryView state={state} go={go} />;
+  else if (path === '/access') page = <AccessView state={state} activateNft={activateNft} go={go} />;
   else if (path === '/land') page = <LandView {...context} />;
   else if (path === '/market-lab') page = <MarketLabView now={now} />;
   else page = <Dashboard {...context} />;
@@ -605,6 +656,7 @@ type ViewContext = {
   now: number;
   go: (path: string) => void;
   activateNft: (nft: AccessNft) => void;
+  mintAccess: () => void;
   buyPlot: (tier: PlotTierKey) => void;
   openPosition: (plot: Plot, nft: AccessNft, strain: Strain, duration: DurationKey, mode: Position['mode'], autoWater: boolean) => void;
   careForPosition: (position: Position) => void;
@@ -807,10 +859,10 @@ function CrewView({ state, now, contributeCrew, claimCrewReward }: ViewContext) 
   </>;
 }
 
-function AccessView({ state, activateNft }: { state: GameState; activateNft: (nft: AccessNft) => void }) {
+function AccessView({ state, activateNft, go }: { state: GameState; activateNft: (nft: AccessNft) => void; go: (path: string) => void }) {
   const activeCount = state.nfts.filter((nft) => nft.activated).length;
   return <>
-    <PageHeading eyebrow="420-token Genesis collection" title="Access seed vault." description="Every Access token maps one-to-one to a catalog identity and deterministic seed. Catalog traits are collectible cosmetics; the balanced 10-strain roster still controls gameplay." />
+    <PageHeading eyebrow="420-token Genesis collection" title="Access seed vault." description="Every Access token maps one-to-one to a catalog identity and deterministic seed. Catalog traits are collectible cosmetics; the balanced 10-strain roster still controls gameplay." action={<div className="access-heading-actions"><button className="button secondary" onClick={() => go('/gallery')}>Browse gallery</button><button className="button primary" onClick={() => go('/mint')}><PackageOpen size={15} /> Mint demo</button></div>} />
     <section className="access-collection-strip panel">
       <div><span>Permanent Genesis cap</span><strong>{ACCESS_COLLECTION_SIZE}</strong></div>
       <div><span>Your credentials</span><strong>{state.nfts.length}</strong></div>
@@ -837,6 +889,95 @@ function AccessView({ state, activateNft }: { state: GameState; activateNft: (nf
       </article>;
     })}</section>
   </>;
+}
+
+function MintView({ state, go, mintAccess, lastMintedId }: { state: GameState; go: (path: string) => void; mintAccess: () => void; lastMintedId: number | null }) {
+  const remaining = availableAccessCatalog(state.nfts.map((nft) => nft.tokenId)).length;
+  const reveal = lastMintedId ? getAccessCatalogEntry(lastMintedId) : undefined;
+  const revealRarity = reveal ? RARITIES[reveal.rarity] : undefined;
+  return <>
+    <PageHeading eyebrow="Genesis Access · prototype mint" title="Reveal one of 420." description="Test the collection flow before Robinhood Chain deployment. Every reveal is stored only in this browser and uses no real wallet, ETH, or on-chain supply." action={<button className="button secondary" onClick={() => go('/gallery')}><Database size={15} /> Open full gallery</button>} />
+    <section className="mint-layout">
+      <div className="panel mint-reveal-card" style={{ '--rarity': revealRarity?.color ?? '#72ef9d' } as CSSProperties}>
+        <div className="mint-reveal-visual">
+          <div className="nft-grid-lines" />
+          {reveal ? <AccessSeedArt tokenId={reveal.id} traits={reveal} size={176} /> : <span className="mint-mystery"><Hexagon size={78} /><strong>?</strong></span>}
+          <span>{reveal ? `REVEALED · ${reveal.seed_pattern.toUpperCase()}` : 'UNREVEALED GENESIS SEED'}</span>
+        </div>
+        <div className="mint-reveal-body">
+          {reveal ? <><span className="token-label">LOUD ACCESS #{reveal.id}</span><div className="mint-reveal-title"><h2>{reveal.name}</h2><span className="rarity-dot" style={{ color: revealRarity?.color }}><i />{reveal.rarity}</span></div><p>{formatCatalogLabel(reveal.family)} · {reveal.type} · {reveal.seed_texture} seed</p></> : <><span className="token-label">NEXT LOCAL REVEAL</span><h2>Identity hidden until confirmation</h2><p>The simulation selects one identity you do not already own.</p></>}
+        </div>
+      </div>
+      <aside className="panel mint-console">
+        <div className="panel-head"><div><p className="eyebrow">Local mint console</p><h2>Genesis Access</h2></div><PackageOpen size={21} /></div>
+        <div className="mint-supply-grid"><span><small>Permanent cap</small><strong>{ACCESS_COLLECTION_SIZE}</strong></span><span><small>In this wallet</small><strong>{state.nfts.length}</strong></span><span><small>Local pool left</small><strong>{remaining}</strong></span></div>
+        <div className="mint-status"><span className="status-dot" /><div><strong>Contract not deployed</strong><small>This button is a local product demo, not a public sale or reservation.</small></div></div>
+        <div className="mint-terms"><DetailLine label="Prototype price" value="0 ETH" /><DetailLine label="Production price" value="Not configured" /><DetailLine label="Network action" value="None" /><DetailLine label="Activation" value="Separate · 4,200 HC" /></div>
+        <button className="button primary full large" onClick={mintAccess} disabled={remaining === 0}><Sparkles size={16} /> {remaining ? 'Simulate mint reveal' : 'Local collection complete'}</button>
+        <p className="mint-disclosure">No NFT is created on Robinhood Chain. Refresh-safe local state lets peers test the reveal, ownership, activation, Plant, and Work journey without financial risk.</p>
+      </aside>
+    </section>
+    <RarityGuide />
+  </>;
+}
+
+const GALLERY_PAGE_SIZE = 24;
+
+function GalleryView({ state, go }: { state: GameState; go: (path: string) => void }) {
+  const [query, setQuery] = useState('');
+  const [rarityFilter, setRarityFilter] = useState<'All' | Rarity>('All');
+  const [page, setPage] = useState(1);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const ownedIds = useMemo(() => new Set(state.nfts.map((nft) => nft.tokenId)), [state.nfts]);
+  const filtered = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return ACCESS_CATALOG.filter((entry) => {
+      const matchesRarity = rarityFilter === 'All' || entry.rarity === rarityFilter;
+      const matchesQuery = !normalized || `${entry.id} ${entry.name} ${entry.family} ${entry.type}`.toLowerCase().includes(normalized);
+      return matchesRarity && matchesQuery;
+    });
+  }, [query, rarityFilter]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / GALLERY_PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const visible = filtered.slice((safePage - 1) * GALLERY_PAGE_SIZE, safePage * GALLERY_PAGE_SIZE);
+  const selected = selectedId ? getAccessCatalogEntry(selectedId) : undefined;
+
+  useEffect(() => setPage(1), [query, rarityFilter]);
+
+  return <>
+    <PageHeading eyebrow="Complete Genesis registry" title="The 420 gallery." description="Browse every fixed identity, compare the disclosed rarity distribution, and inspect the pixel seed generated from each catalog record." action={<button className="button primary" onClick={() => go('/mint')}><PackageOpen size={15} /> Open mint demo</button>} />
+    <RarityGuide />
+    <section className="panel gallery-controls">
+      <label><span>Search the registry</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Token #, name, family, or type" /></label>
+      <label><span>Rarity</span><select value={rarityFilter} onChange={(event) => setRarityFilter(event.target.value as 'All' | Rarity)}><option value="All">All five tiers</option>{ACCESS_RARITY_ORDER.map((rarity) => <option key={rarity} value={rarity}>{rarity} · {accessRarityCount(rarity)}</option>)}</select></label>
+      <div className="gallery-result-count"><span>Registry results</span><strong>{filtered.length} / {ACCESS_COLLECTION_SIZE}</strong></div>
+    </section>
+    {selected && <section className="panel gallery-inspector" style={{ '--rarity': RARITIES[selected.rarity].color } as CSSProperties}>
+      <div className="gallery-inspector-art"><AccessSeedArt tokenId={selected.id} traits={selected} size={150} /></div>
+      <div><span className="token-label">SELECTED · LOUD ACCESS #{selected.id}</span><h2>{selected.name}</h2><p>{formatCatalogLabel(selected.family)} · {selected.type} · {selected.seed_shape} / {selected.seed_pattern} / {selected.seed_texture}</p><div className="nft-catalog-line"><span>{selected.rarity}</span><span>{RARITIES[selected.rarity].multiplier.toFixed(2)}× base</span><span>{accessRarityCount(selected.rarity)} in collection</span>{ownedIds.has(selected.id) && <span>Owned locally</span>}</div></div>
+      <button className="dialog-close" onClick={() => setSelectedId(null)} aria-label="Close selected gallery item"><X size={17} /></button>
+    </section>}
+    <section className="gallery-grid">{visible.map((entry) => {
+      const rarity = RARITIES[entry.rarity];
+      return <button className={selectedId === entry.id ? 'gallery-card selected' : 'gallery-card'} key={entry.id} onClick={() => setSelectedId(entry.id)} style={{ '--rarity': rarity.color } as CSSProperties}>
+        <div className="gallery-seed"><AccessSeedArt tokenId={entry.id} traits={entry} size={72} />{ownedIds.has(entry.id) && <span className="gallery-owned"><Check size={11} /> OWNED</span>}</div>
+        <div><span className="token-label">#{entry.id.toString().padStart(3, '0')}</span><strong>{entry.name}</strong><small style={{ color: rarity.color }}>{entry.rarity} · {rarity.multiplier.toFixed(2)}×</small></div>
+      </button>;
+    })}</section>
+    {!visible.length && <div className="panel gallery-empty"><Database size={30} /><h2>No identities match.</h2><p>Clear the search or choose another rarity tier.</p></div>}
+    <div className="gallery-pagination"><button className="button secondary" disabled={safePage <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</button><span>Page <strong>{safePage}</strong> of {pageCount} · showing {visible.length} identities</span><button className="button secondary" disabled={safePage >= pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))}>Next</button></div>
+  </>;
+}
+
+function RarityGuide() {
+  return <section className="rarity-guide panel">
+    <div className="rarity-guide-copy"><p className="eyebrow">How rarity works</p><h2>Fixed scarcity, disclosed utility.</h2><p>Rarity sets the Access base production multiplier shown before a Plant or Work position. XP adds a separate progression bonus, and activation is still required. Rarity does not represent stock ownership, guaranteed profit, lab quality, or promised resale value.</p><small>Collection share is not a promise of public-mint odds. The production distribution method and price are not configured.</small></div>
+    <div className="rarity-tier-grid">{ACCESS_RARITY_ORDER.map((rarity) => {
+      const count = accessRarityCount(rarity);
+      const details = RARITIES[rarity];
+      return <div key={rarity} style={{ '--rarity': details.color } as CSSProperties}><span><i />{rarity}</span><strong>{count}</strong><small>{((count / ACCESS_COLLECTION_SIZE) * 100).toFixed(1)}% of collection</small><b>{details.multiplier.toFixed(2)}× base</b></div>;
+    })}</div>
+  </section>;
 }
 
 function LandView({ state, buyPlot, go }: ViewContext) {

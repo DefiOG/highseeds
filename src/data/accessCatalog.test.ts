@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { ACCESS_CATALOG, ACCESS_CATALOG_MANIFEST, ACCESS_COLLECTION_SIZE, getAccessCatalogEntry } from './accessCatalog';
+import {
+  ACCESS_CATALOG,
+  ACCESS_CATALOG_MANIFEST,
+  ACCESS_COLLECTION_SIZE,
+  accessRarityCount,
+  availableAccessCatalog,
+  getAccessCatalogEntry,
+  pickSimulatedAccessMint,
+} from './accessCatalog';
 
 describe('420-token Access catalog', () => {
   it('contains one complete identity for every Genesis token id', () => {
@@ -30,5 +38,14 @@ describe('420-token Access catalog', () => {
     expect(getAccessCatalogEntry(1)?.name).toBe('Runtz');
     expect(getAccessCatalogEntry(420)?.id).toBe(420);
     expect(getAccessCatalogEntry(421)).toBeUndefined();
+  });
+
+  it('builds a unique local mint pool without changing the fixed collection', () => {
+    expect(availableAccessCatalog([1, 2, 420])).toHaveLength(417);
+    expect(pickSimulatedAccessMint([], 0)?.id).toBe(1);
+    expect(pickSimulatedAccessMint([], 0.999999)?.id).toBe(420);
+    expect(pickSimulatedAccessMint([1], 0)?.id).toBe(2);
+    expect(pickSimulatedAccessMint(ACCESS_CATALOG.map((entry) => entry.id))).toBeUndefined();
+    expect(accessRarityCount('Legendary')).toBe(13);
   });
 });
