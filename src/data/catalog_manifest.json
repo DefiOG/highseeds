@@ -1,0 +1,20 @@
+{
+  "catalog_version": "2.0",
+  "total_strains": 420,
+  "status": "generated gameplay estimate \u2014 not lab-verified, not live market data",
+  "intended_use": "standalone strain gallery / future 'Seed Vault' collection browser \u2014 NOT wired into the 10-strain game economy (economy.ts) without a separate balance pass",
+  "rarity_tiers": {
+    "Legendary": 13,
+    "Epic": 34,
+    "Rare": 50,
+    "Uncommon": 105,
+    "Common": 218
+  },
+  "known_limitations": [
+    "THC ranges are typical flower windows by lineage family, not per-strain lab data",
+    "Popularity is anchored to real data only for the top 30 strains; remainder is ordered by lineage tier as a design choice",
+    "Yield is a class-level band (low/medium/high), not measured g/plant",
+    "Value tier reflects general market positioning, not a live price feed",
+    "93 of 420 rows are legitimately-tagged numbered phenotype variants (is_pheno: true) of proven strains, used to reach a full 420 count without inventing fake cultivars"
+  ]
+}

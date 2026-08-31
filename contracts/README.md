@@ -2,7 +2,7 @@
 
 This directory contains the deliberately small EVM core for Robinhood Chain:
 
-- `LoudAccess.sol`: role-minted ERC-721 Access collectibles with activation, rarity, and account-bound XP metadata.
+- `LoudAccess.sol`: role-minted ERC-721 Access collectibles with a permanent 420-token Genesis cap, catalog-committed rarity, activation, and account-bound XP metadata. The contract exposes minted and remaining supply directly.
 - `LoudPlot.sol`: role-minted ERC-721 plots with fixed Pot/Room/House/Farm capacities of 1/4/8/36. Occupied plots cannot transfer.
 - `LoudPositions.sol`: Access escrow, per-worker authorization, an allowed-strain registry, contract-fixed 65/35 worker terms, six-hour lazy checkpoints, permissionless mature settlement, exact player open/close protocol fees, pause, fee-free player emergency withdrawal, and pull-based treasury withdrawals.
 

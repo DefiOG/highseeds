@@ -45,6 +45,7 @@ In the repository settings, select **GitHub Actions** as the Pages source. No bl
 - Auto-water is the safe default; reserves are prepaid and unused HC is refunded.
 - Pre-maturity claim-clicks were removed. Harvest settles lazily at completion or at the universal 80% early-exit rate.
 - Operator Reputation and season XP are account-bound prototype scores. Access rarity and XP provide the displayed grow multipliers.
+- The Genesis Access collection is permanently capped at 420 tokens. Token IDs map one-to-one to catalog identities, deterministic seed art, and a contract-enforced rarity; catalog traits are cosmetic and do not expand the balanced 10-strain economy.
 - Crew Operations use three bounded weekly crop bays, a 20% personal cap, labeled simulated members, and deterministic cosmetic progression without creating another HC faucet.
 - Market Pulse remains read-only and has no game-economy linkage.
 
@@ -56,7 +57,7 @@ In the repository settings, select **GitHub Actions** as the Pages source. No bl
 - `/work` — landless worker contracts
 - `/contracts` — finite rotating demand board
 - `/crew` — bounded weekly Crew Operation with requested crops, milestones, roster, and cosmetic reward
-- `/access` — functional Access activation and XP
+- `/access` — 420-token Genesis seed vault, functional activation, rarity, and XP
 - `/land` — four visual land tiers, capped by the 36-slot commercial Farm
 - `/positions/:id` — live checkpoint, care, and settlement view
 - `/market-lab` — dated, read-only market fixture
@@ -64,6 +65,8 @@ In the repository settings, select **GitHub Actions** as the Pages source. No bl
 ## Architecture
 
 - `src/data/economy.ts` owns the v2 economy configuration, strain profiles, contracts, and seasons.
+- `src/data/accessCatalog.ts` validates and exposes the 420 one-to-one Genesis identity catalog; its generated estimates are kept outside economy calculations.
+- `src/components/AccessSeedArt.tsx` renders deterministic catalog-trait seed art for each Access token.
 - `src/data/crew.ts` owns the Monday-UTC Crew Operation lifecycle, simulated demo progress, crop bays, caps, and reward eligibility.
 - `src/lib/engine.ts` contains pure position, water, share, maturity, and early-exit calculations.
 - `src/state/game.ts` persists the local `v2` state separately from the legacy simulation.
@@ -75,4 +78,4 @@ In the repository settings, select **GitHub Actions** as the Pages source. No bl
 - `contracts/src/` contains the Robinhood Chain EVM ownership and position-escrow core; see `contracts/README.md` for its deliberately limited scope and deployment gates.
 - `scripts/deploy-robinhood.mjs` refuses non-Robinhood chain IDs and requires an additional explicit confirmation for mainnet.
 
-Strain THC, genetics, and history inputs are from the project’s High Times source roster. HC prices, yields, contract demand, and progression are game-design values—not real cannabis, securities, or investment data.
+The 10 playable strains use the project’s High Times source roster. The separate 420-entry Access catalog is explicitly labeled generated collectible lore: its THC windows, popularity, yield bands, and value tiers are not lab-verified or live market data. HC prices, yields, contract demand, and progression are game-design values—not real cannabis, securities, or investment data.

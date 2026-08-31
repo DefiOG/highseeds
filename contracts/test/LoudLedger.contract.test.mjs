@@ -1,12 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { ContractFactory, keccak256, parseEther, toUtf8Bytes } from 'ethers';
+import { ContractFactory, keccak256, parseEther, toBeHex, toUtf8Bytes, zeroPadValue } from 'ethers';
 import { network } from 'hardhat';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const FEE = parseEther('0.000001');
 const SIX_HOURS = 6 * 60 * 60;
+const ACCESS_CATALOG = JSON.parse(
+  fs.readFileSync(path.join(process.cwd(), 'src', 'data', 'catalog_420_v2.json'), 'utf8'),
+);
+const RARITY_INDEX = new Map(['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary'].map((rarity, index) => [rarity, index]));
 const STRAINS = [
   'og-kush',
   'sour-diesel',
@@ -63,10 +67,51 @@ describe('Robinhood Chain contract core', () => {
   });
 
   async function mintOwnerPair(tier = 0, activated = true) {
-    await (await access.connect(admin).mint(await owner.getAddress(), 2, activated)).wait();
+    await mintAccess(await owner.getAddress(), activated);
     await (await plot.connect(admin).mint(await owner.getAddress(), tier)).wait();
     await (await access.connect(owner).approve(await positions.getAddress(), 1)).wait();
   }
+
+  async function mintAccess(to, activated = true) {
+    const tokenId = await access.nextTokenId();
+    const rarity = await access.genesisRarity(tokenId);
+    await (await access.connect(admin).mint(to, rarity, activated)).wait();
+    return tokenId;
+  }
+
+  it('commits every catalog token to its canonical on-chain rarity', async () => {
+    const encodedRarities = await Promise.all(
+      ACCESS_CATALOG.map((entry) => access.genesisRarity(entry.id)),
+    );
+    for (let index = 0; index < ACCESS_CATALOG.length; index += 1) {
+      expect(encodedRarities[index]).toBe(BigInt(RARITY_INDEX.get(ACCESS_CATALOG[index].rarity)));
+    }
+
+    await expect(access.genesisRarity(0)).rejects.toThrow();
+    await expect(access.genesisRarity(421)).rejects.toThrow();
+    await expect(access.connect(admin).mint(await owner.getAddress(), 0, false)).rejects.toThrow();
+    expect(await access.totalSupply()).toBe(0n);
+    expect(await access.remainingSupply()).toBe(420n);
+  });
+
+  it('enforces the permanent 420-token Genesis Access cap', async () => {
+    expect(await access.MAX_SUPPLY()).toBe(420n);
+    const nextTokenIdLayout = artifact('LoudAccess').storageLayout.storage.find((entry) => entry.label === 'nextTokenId');
+    expect(nextTokenIdLayout).toBeDefined();
+    const nextTokenIdSlot = toBeHex(BigInt(nextTokenIdLayout.slot));
+    const finalTokenId = zeroPadValue(toBeHex(420), 32);
+    await connection.provider.request({
+      method: 'hardhat_setStorageAt',
+      params: [await access.getAddress(), nextTokenIdSlot, finalTokenId],
+    });
+    await connection.provider.request({ method: 'evm_mine', params: [] });
+    expect(await access.nextTokenId()).toBe(420n);
+    await (await access.connect(admin).mint(await owner.getAddress(), 0, false)).wait();
+    expect(await access.nextTokenId()).toBe(421n);
+    expect(await access.totalSupply()).toBe(420n);
+    expect(await access.remainingSupply()).toBe(0n);
+    await expect(access.connect(admin).mint(await owner.getAddress(), 0, false)).rejects.toThrow();
+  });
 
   it('encodes the four promised plot capacities, including the 36-slot Farm', async () => {
     expect(await plot.capacityForTier(0)).toBe(1n);
@@ -136,8 +181,8 @@ describe('Robinhood Chain contract core', () => {
   });
 
   it('enforces plot capacity on-chain', async () => {
-    await (await access.connect(admin).mint(await owner.getAddress(), 1, true)).wait();
-    await (await access.connect(admin).mint(await owner.getAddress(), 1, true)).wait();
+    await mintAccess(await owner.getAddress());
+    await mintAccess(await owner.getAddress());
     await (await plot.connect(admin).mint(await owner.getAddress(), 0)).wait();
     await (await access.connect(owner).setApprovalForAll(await positions.getAddress(), true)).wait();
     const strain = keccak256(toUtf8Bytes('sour-diesel'));
@@ -150,7 +195,7 @@ describe('Robinhood Chain contract core', () => {
   });
 
   it('requires current plot-owner opt-in for worker positions', async () => {
-    await (await access.connect(admin).mint(await worker.getAddress(), 0, true)).wait();
+    await mintAccess(await worker.getAddress());
     await (await plot.connect(admin).mint(await owner.getAddress(), 1)).wait();
     await (await access.connect(worker).approve(await positions.getAddress(), 1)).wait();
     const strain = keccak256(toUtf8Bytes('strawberry-cough'));
@@ -174,8 +219,8 @@ describe('Robinhood Chain contract core', () => {
   });
 
   it('uses per-worker approval rather than opening a plot to every Access holder', async () => {
-    await (await access.connect(admin).mint(await worker.getAddress(), 0, true)).wait();
-    await (await access.connect(admin).mint(await recipient.getAddress(), 0, true)).wait();
+    await mintAccess(await worker.getAddress());
+    await mintAccess(await recipient.getAddress());
     await (await plot.connect(admin).mint(await owner.getAddress(), 1)).wait();
     await (await access.connect(worker).approve(await positions.getAddress(), 1)).wait();
     await (await access.connect(recipient).approve(await positions.getAddress(), 2)).wait();
@@ -189,7 +234,7 @@ describe('Robinhood Chain contract core', () => {
   });
 
   it('lets anyone settle a mature worker position and releases the plot without taking the worker Access', async () => {
-    await (await access.connect(admin).mint(await worker.getAddress(), 0, true)).wait();
+    await mintAccess(await worker.getAddress());
     await (await plot.connect(admin).mint(await owner.getAddress(), 1)).wait();
     await (await access.connect(worker).approve(await positions.getAddress(), 1)).wait();
     await (await positions.connect(owner).setWorkerAccess(1, await worker.getAddress(), true)).wait();
@@ -228,7 +273,7 @@ describe('Robinhood Chain contract core', () => {
   });
 
   it('rejects accidental safe transfers and can recover untracked raw transfers only while paused', async () => {
-    await (await access.connect(admin).mint(await owner.getAddress(), 0, true)).wait();
+    await mintAccess(await owner.getAddress());
 
     await expect(
       access

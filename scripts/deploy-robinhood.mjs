@@ -31,6 +31,9 @@ if (admin.toLowerCase() !== wallet.address.toLowerCase()) {
 const accessBaseUri = process.env.ACCESS_BASE_URI || '';
 const plotBaseUri = process.env.PLOT_BASE_URI || '';
 const artifactRoot = path.join(process.cwd(), 'contracts', 'artifacts');
+const accessCatalogManifest = JSON.parse(
+  fs.readFileSync(path.join(process.cwd(), 'src', 'data', 'catalog_manifest.json'), 'utf8'),
+);
 const strainIds = [
   'bruce-banner-3', 'strawberry-cough', 'og-kush', 'super-lemon-haze', 'durban-poison',
   'sour-diesel', 'northern-lights-5', 'granddaddy-purple', 'super-silver-haze', 'blueberry',
@@ -61,6 +64,13 @@ const access = await deploy('LoudAccess', [admin, accessBaseUri]);
 const plot = await deploy('LoudPlot', [admin, plotBaseUri]);
 const positions = await deploy('LoudPositions', [admin, access.address, plot.address, strainIds]);
 
+const deployedAccessMaxSupply = Number(await access.contract.MAX_SUPPLY());
+if (deployedAccessMaxSupply !== accessCatalogManifest.total_strains) {
+  throw new Error(
+    `Access supply mismatch: contract=${deployedAccessMaxSupply}, catalog=${accessCatalogManifest.total_strains}.`,
+  );
+}
+
 const plotContract = plot.contract.connect(wallet);
 const binding = await plotContract.setPositionManager(positions.address);
 const bindingReceipt = await binding.wait();
@@ -76,6 +86,11 @@ const manifest = {
   configVersion: 2,
   workerShareBps: 6500,
   plotOwnerShareBps: 3500,
+  accessGenesis: {
+    maxSupply: deployedAccessMaxSupply,
+    catalogVersion: accessCatalogManifest.catalog_version,
+    rarityTiers: accessCatalogManifest.rarity_tiers,
+  },
   allowedStrainIds: strainIds,
   contracts: {
     LoudAccess: { address: access.address, transactionHash: access.transactionHash, gasUsed: access.gasUsed },

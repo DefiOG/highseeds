@@ -33,7 +33,7 @@ const input = {
     optimizer: { enabled: true, runs: 200 },
     outputSelection: {
       '*': {
-        '*': ['abi', 'evm.bytecode.object', 'evm.deployedBytecode.object', 'metadata'],
+        '*': ['abi', 'evm.bytecode.object', 'evm.deployedBytecode.object', 'metadata', 'storageLayout'],
       },
     },
   },
@@ -60,6 +60,7 @@ for (const target of targets) {
     abi: compiled.abi,
     bytecode: `0x${compiled.evm.bytecode.object}`,
     deployedBytecode: `0x${compiled.evm.deployedBytecode.object}`,
+    storageLayout: compiled.storageLayout,
   };
   fs.writeFileSync(path.join(artifactRoot, `${target}.json`), `${JSON.stringify(artifact, null, 2)}\n`);
   fs.writeFileSync(

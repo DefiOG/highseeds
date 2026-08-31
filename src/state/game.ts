@@ -1,9 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { STRAINS } from '../data/economy';
 import { createCrewOperationState, crewWeekWindow } from '../data/crew';
+import { getAccessCatalogEntry } from '../data/accessCatalog';
 import type { ActivityItem, GameState } from '../types';
 
 const STORAGE_KEY = 'loud-ledger-simulation-v2';
+
+const LEGACY_ACCESS_IDS: Record<number, number> = {
+  1042: 42,
+  2117: 117,
+  3028: 308,
+};
+
+function genesisAccessId(tokenId: number) {
+  return LEGACY_ACCESS_IDS[tokenId] ?? tokenId;
+}
 
 const starterState: GameState = {
   walletConnected: false,
@@ -11,9 +22,9 @@ const starterState: GameState = {
   ethBalance: 0.28642,
   hcBalance: 12_850,
   nfts: [
-    { tokenId: 1042, rarity: 'Rare', xp: 600, activated: true },
-    { tokenId: 2117, rarity: 'Uncommon', xp: 200, activated: false },
-    { tokenId: 3028, rarity: 'Common', xp: 0, activated: false },
+    { tokenId: 42, rarity: 'Rare', xp: 600, activated: true },
+    { tokenId: 117, rarity: 'Uncommon', xp: 200, activated: false },
+    { tokenId: 308, rarity: 'Common', xp: 0, activated: false },
   ],
   plots: [
     { id: 4318, tier: 'room', owned: true, owner: 'You', reliability: 98 },
@@ -48,12 +59,18 @@ function loadState(): GameState {
     if (saved) {
       const parsed = JSON.parse(saved) as Partial<GameState> & { crewContribution?: number };
       const weekId = crewWeekWindow(Date.now()).id;
+      const migratedNfts = (parsed.nfts ?? starterState.nfts).map((nft) => {
+        const tokenId = genesisAccessId(nft.tokenId);
+        const catalogEntry = getAccessCatalogEntry(tokenId);
+        return { ...nft, tokenId, rarity: catalogEntry?.rarity ?? nft.rarity };
+      });
       return {
         ...structuredClone(starterState),
         ...parsed,
         grams: { ...starterState.grams, ...parsed.grams },
         orderFills: { ...parsed.orderFills },
-        positions: (parsed.positions ?? []).map((position) => ({ ...position, careSteps: position.careSteps ?? [0] })),
+        nfts: migratedNfts,
+        positions: (parsed.positions ?? []).map((position) => ({ ...position, nftId: genesisAccessId(position.nftId), careSteps: position.careSteps ?? [0] })),
         plots: parsed.plots ?? starterState.plots,
         crewOperation: parsed.crewOperation?.weekId === weekId
           ? { ...createCrewOperationState(weekId), ...parsed.crewOperation }

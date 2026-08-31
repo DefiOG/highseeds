@@ -10,7 +10,8 @@
     "build:qa": "tsc -b && vite build --mode qa",
     "build:file": "tsc -b && vite build --mode file --outDir dist-file",
     "build:peer": "tsc -b && vite build --mode peer --outDir peer-demo",
-    "contracts:compile": "node scripts/compile-contracts.mjs",
+    "catalog:validate": "node scripts/validate-access-genesis.mjs",
+    "contracts:compile": "npm run catalog:validate && node scripts/compile-contracts.mjs",
     "contracts:estimate": "npm run contracts:compile && node scripts/estimate-contract-cost.mjs",
     "contracts:deploy:robinhood": "npm run contracts:compile && node scripts/deploy-robinhood.mjs",
     "test": "npm run contracts:compile && vitest run"

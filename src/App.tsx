@@ -47,6 +47,8 @@ import crewOperationSeal from './assets/crew-operation-seal-ui.webp';
 import demandDispatchHero from './assets/demand-dispatch-hero-ui.webp';
 import growthProgression from './assets/growth-progression-ui.webp';
 import pixelGrowRoom from './assets/pixel-grow-room-ui.png';
+import { AccessSeedArt } from './components/AccessSeedArt';
+import { ACCESS_COLLECTION_SIZE, formatCatalogLabel, getAccessCatalogEntry } from './data/accessCatalog';
 import {
   activeCrewOperation,
   CREW_COMPLETION_REPUTATION,
@@ -806,7 +808,35 @@ function CrewView({ state, now, contributeCrew, claimCrewReward }: ViewContext) 
 }
 
 function AccessView({ state, activateNft }: { state: GameState; activateNft: (nft: AccessNft) => void }) {
-  return <><PageHeading eyebrow="Functional membership" title="Access credentials" description="Rarity differences are compressed. Reputation is a prototype score. Access rarity and XP provide the displayed grow multipliers." /><section className="nft-grid">{state.nfts.map((nft) => { const rarity = RARITIES[nft.rarity]; return <article className="nft-card" key={nft.tokenId}><div className="nft-visual" style={{ '--rarity': rarity.color } as React.CSSProperties}><div className="nft-grid-lines" /><Leaf size={42} /><span>ACCESS</span></div><div className="nft-body"><div className="nft-heading"><div><span className="token-label">LOUD ACCESS</span><h3>#{nft.tokenId}</h3></div><span className="rarity-dot" style={{ color: rarity.color }}><i />{nft.rarity}</span></div><div className="nft-stats"><div><span>Base rate</span><strong>{rarity.multiplier.toFixed(2)}×</strong></div><div><span>XP bonus</span><strong>{xpBonus(nft.xp).toFixed(2)}×</strong></div><div><span>Current XP</span><strong>{formatNumber(nft.xp, 0)}</strong></div></div>{nft.activated ? <button className="button activated" disabled><Check size={16} /> Functional access active</button> : <button className="button primary full" onClick={() => activateNft(nft)} disabled={state.hcBalance < ACTIVATION_COST}><LockKeyhole size={16} /> Activate · 4,200 HC</button>}</div></article>; })}</section></>;
+  const activeCount = state.nfts.filter((nft) => nft.activated).length;
+  return <>
+    <PageHeading eyebrow="420-token Genesis collection" title="Access seed vault." description="Every Access token maps one-to-one to a catalog identity and deterministic seed. Catalog traits are collectible cosmetics; the balanced 10-strain roster still controls gameplay." />
+    <section className="access-collection-strip panel">
+      <div><span>Permanent Genesis cap</span><strong>{ACCESS_COLLECTION_SIZE}</strong></div>
+      <div><span>Your credentials</span><strong>{state.nfts.length}</strong></div>
+      <div><span>Activated</span><strong>{activeCount}</strong></div>
+      <p>Generated catalog estimates · not lab data or live market pricing</p>
+    </section>
+    <section className="nft-grid">{state.nfts.map((nft) => {
+      const rarity = RARITIES[nft.rarity];
+      const identity = getAccessCatalogEntry(nft.tokenId);
+      if (!identity) return null;
+      return <article className="nft-card" key={nft.tokenId}>
+        <div className="nft-visual" style={{ '--rarity': rarity.color } as CSSProperties}>
+          <div className="nft-grid-lines" />
+          <AccessSeedArt tokenId={nft.tokenId} traits={identity} size={112} />
+          <span>GENESIS SEED · {identity.seed_pattern.toUpperCase()}</span>
+        </div>
+        <div className="nft-body">
+          <div className="nft-heading"><div><span className="token-label">LOUD ACCESS #{nft.tokenId}</span><h3>{identity.name}</h3></div><span className="rarity-dot" style={{ color: rarity.color }}><i />{nft.rarity}</span></div>
+          <div className="nft-catalog-line"><span>{formatCatalogLabel(identity.family)}</span><span>{identity.type}</span><span>{identity.seed_texture}</span></div>
+          <div className="nft-stats"><div><span>Base rate</span><strong>{rarity.multiplier.toFixed(2)}×</strong></div><div><span>XP bonus</span><strong>{xpBonus(nft.xp).toFixed(2)}×</strong></div><div><span>Current XP</span><strong>{formatNumber(nft.xp, 0)}</strong></div></div>
+          <p className="nft-cosmetic-note">Catalog identity #{identity.id} · cosmetic lore only</p>
+          {nft.activated ? <button className="button activated" disabled><Check size={16} /> Functional access active</button> : <button className="button primary full" onClick={() => activateNft(nft)} disabled={state.hcBalance < ACTIVATION_COST}><LockKeyhole size={16} /> Activate · 4,200 HC</button>}
+        </div>
+      </article>;
+    })}</section>
+  </>;
 }
 
 function LandView({ state, buyPlot, go }: ViewContext) {
