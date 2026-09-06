@@ -13,6 +13,9 @@ contract LoudAccess is ERC721, AccessControl {
 
     uint8 public constant MAX_RARITY = 4;
     uint256 public constant MAX_SUPPLY = 420;
+    uint64 public constant XP_PER_LEVEL = 250;
+    uint64 public constant MAX_XP = 12_250;
+    address public positionManager;
 
     // Three-bit rarity values for catalog token IDs 1-255. Tokens 256-420 are Common (0).
     // 0 = Common, 1 = Uncommon, 2 = Rare, 3 = Epic, 4 = Legendary.
@@ -34,18 +37,21 @@ contract LoudAccess is ERC721, AccessControl {
     error InvalidGenesisTokenId(uint256 tokenId);
     error CatalogRarityMismatch(uint256 tokenId, uint8 expectedRarity, uint8 suppliedRarity);
     error MaxSupplyReached(uint256 maxSupply);
+    error PositionManagerAlreadySet();
+    error NotPositionManager();
 
     event AccessMinted(uint256 indexed tokenId, address indexed owner, uint8 rarity, bool activated);
     event ActivationChanged(uint256 indexed tokenId, bool activated);
     event XpAdded(uint256 indexed tokenId, uint64 amount, uint64 newTotal);
     event BaseURIChanged(string newBaseURI);
+    event PositionManagerSet(address indexed manager);
 
     uint256 public nextTokenId = 1;
     mapping(uint256 tokenId => AccessData data) public accessData;
 
     string private _baseTokenURI;
 
-    constructor(address admin, string memory baseURI_) ERC721("Loud Ledger Access", "LOUDACCESS") {
+    constructor(address admin, string memory baseURI_) ERC721("Weed Hustle Farmers", "FARMER420") {
         if (admin == address(0)) revert InvalidAddress();
         _baseTokenURI = baseURI_;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
@@ -90,17 +96,34 @@ contract LoudAccess is ERC721, AccessControl {
         return uint8((packed >> ((zeroBasedId % 85) * 3)) & 7);
     }
 
-    function setActivated(uint256 tokenId, bool activated) external onlyRole(GAME_ROLE) {
+    function setPositionManager(address manager) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (manager == address(0) || manager.code.length == 0) revert InvalidAddress();
+        if (positionManager != address(0)) revert PositionManagerAlreadySet();
+        positionManager = manager;
+        emit PositionManagerSet(manager);
+    }
+
+    function levelOf(uint256 tokenId) external view returns (uint8) {
+        _requireOwned(tokenId);
+        return uint8(1 + accessData[tokenId].xp / XP_PER_LEVEL);
+    }
+
+    function setActivated(uint256 tokenId, bool activated) external {
+        if (msg.sender != positionManager) _checkRole(GAME_ROLE);
         _requireOwned(tokenId);
         accessData[tokenId].activated = activated;
         emit ActivationChanged(tokenId, activated);
     }
 
-    function addXp(uint256 tokenId, uint64 amount) external onlyRole(GAME_ROLE) returns (uint64 newTotal) {
+    function addXp(uint256 tokenId, uint64 amount) external returns (uint64 newTotal) {
+        if (msg.sender != positionManager) revert NotPositionManager();
         _requireOwned(tokenId);
-        newTotal = accessData[tokenId].xp + amount;
+        uint64 previous = accessData[tokenId].xp;
+        uint64 available = MAX_XP - previous;
+        uint64 awarded = amount > available ? available : amount;
+        newTotal = previous + awarded;
         accessData[tokenId].xp = newTotal;
-        emit XpAdded(tokenId, amount, newTotal);
+        emit XpAdded(tokenId, awarded, newTotal);
     }
 
     function isActivated(uint256 tokenId) external view returns (bool) {

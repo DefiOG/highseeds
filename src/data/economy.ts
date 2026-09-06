@@ -1,3 +1,4 @@
+import { ACCESS_CATALOG, getAccessCatalogEntry } from './accessCatalog';
 import type { CustomerKey, DurationKey, PlotTierKey, Rarity } from '../types';
 
 export const ACTIVATION_COST = 4_200;
@@ -54,7 +55,7 @@ export interface Strain {
   playstyle: string;
 }
 
-export const STRAINS: Strain[] = [
+const LEGACY_STRAINS: Strain[] = [
   { id: 'bruce-banner-3', name: 'Bruce Banner #3', thc: 28.35, genetics: 'OG Kush × Strawberry Diesel', history: 'Lab-tested in Denver, 2013; a potency leader in the source roster.', pedigreePremium: 0.5, growModifier: 0.86, playstyle: 'Premium price · lower volume' },
   { id: 'strawberry-cough', name: 'Strawberry Cough', thc: 25.28, genetics: 'Strawberry Fields × Haze', history: 'Sativa-dominant legacy profile, lab-tested in Seattle, 2013.', pedigreePremium: 0.2, growModifier: 0.94, playstyle: 'Balanced contract specialist' },
   { id: 'og-kush', name: 'OG Kush', thc: 24.04, genetics: 'Disputed California lineage', history: 'A highly influential California classic in modern hybrid lineages.', pedigreePremium: 0.8, growModifier: 0.92, playstyle: 'High pedigree · steady demand' },
@@ -66,6 +67,37 @@ export const STRAINS: Strain[] = [
   { id: 'super-silver-haze', name: 'Super Silver Haze', thc: 17.87, genetics: 'Haze × Northern Lights #5 × Skunk #1', history: 'Back-to-back Cannabis Cup champion in 1998 and 1999.', pedigreePremium: 0.8, growModifier: 1.08, playstyle: 'Long-term contract crop' },
   { id: 'blueberry', name: 'Blueberry', thc: 17.45, genetics: 'Eight-strain lineage by DJ Short', history: 'Award-winning, indica-dominant legacy strain from western Canada.', pedigreePremium: 0.5, growModifier: 1.18, playstyle: 'Highest volume · lower quote' },
 ];
+
+// Bounded simulation estimates; existing profiles retain their saved-game values.
+export const COLLECTION_STRAINS: Strain[] = ACCESS_CATALOG.map((entry) => {
+  const legacy = LEGACY_STRAINS.find((strain) => strain.id === entry.slug);
+  if (legacy) return legacy;
+  return {
+    id: entry.slug,
+    name: entry.name,
+    thc: entry.thc_mid,
+    genetics: `${entry.type} / ${entry.family.replaceAll('_', ' ')}`,
+    history: 'Generated gameplay estimate; not lab-verified strain data.',
+    pedigreePremium: { commodity: 0.2, standard: 0.4, premium: 0.6, exotic: 0.8 }[entry.value_tier],
+    growModifier: { low: 0.86, medium: 1.02, high: 1.18 }[entry.yield_band],
+    playstyle: `${entry.yield_band} yield / ${entry.value_tier} value (game estimate)`,
+  };
+});
+
+// Includes the retired Bruce Banner #3 profile solely for old positions/inventory.
+export const STRAINS: Strain[] = [
+  ...LEGACY_STRAINS,
+  ...COLLECTION_STRAINS.filter((strain) => !LEGACY_STRAINS.some((old) => old.id === strain.id)),
+];
+
+export function getNftStrain(tokenId: number): Strain | undefined {
+  const entry = getAccessCatalogEntry(tokenId);
+  return entry ? COLLECTION_STRAINS.find((strain) => strain.id === entry.slug) : undefined;
+}
+
+export function nftCanPlantStrain(tokenId: number, strainId: string) {
+  return getNftStrain(tokenId)?.id === strainId;
+}
 
 export const CUSTOMERS: Record<CustomerKey, { label: string; priceMultiplier: number; color: string }> = {
   street: { label: 'Street window', priceMultiplier: 1.3, color: '#8df9b5' },
@@ -95,7 +127,7 @@ export function acceptedDeliveryAmount(requested: number, remaining: number, ava
 }
 
 export function strainBasePrice(strain: Strain): number {
-  const potency = (strain.thc - 17.45) / (28.35 - 17.45);
+  const potency = Math.min(1, Math.max(0, (strain.thc - 17.45) / (28.35 - 17.45)));
   return 10.1 + potency * 2.1 + strain.pedigreePremium;
 }
 
@@ -107,20 +139,25 @@ export function demandEpoch(now: number) {
   return new Date(now).toISOString().slice(0, 10);
 }
 
-export function getDailyContracts(now: number): DemandContract[] {
+export function getDailyContracts(now: number, tokenIds?: number[]): DemandContract[] {
   const epoch = demandEpoch(now);
   const day = Math.floor(now / 86_400_000);
-  const indexes = [day % STRAINS.length, (day + 3) % STRAINS.length, (day + 7) % STRAINS.length];
+  const owned = [...new Set(tokenIds ?? [])].sort((a, b) => a - b)
+    .map(getNftStrain).filter((strain): strain is Strain => Boolean(strain));
+  const pool = tokenIds ? owned : COLLECTION_STRAINS;
+  if (!pool.length) return [];
+  const indexes = [day % pool.length, (day + 1) % pool.length, (day + 2) % pool.length];
   const specs: Array<{ customer: CustomerKey; target: number; rep: number; xp: number; title: string; risk: DemandContract['risk'] }> = [
     { customer: 'street', target: 8, rep: 4, xp: 35, title: 'Opening-bell pickup', risk: 'Quick' },
     { customer: 'regular', target: 18, rep: 8, xp: 75, title: 'Repeat-client reserve', risk: 'Precision' },
     { customer: 'wholesaler', target: 42, rep: 15, xp: 140, title: 'Warehouse allocation', risk: 'Volume' },
   ];
   return specs.map((spec, index) => {
-    const strain = STRAINS[indexes[index]];
+    const strain = pool[indexes[index]];
     const urgency = index === 1 ? 1.08 : index === 2 ? 1.12 : 1;
     return {
-      id: `${epoch}-${spec.customer}-${strain.id}`,
+      // Stable personal order IDs keep daily caps intact when the owned roster changes.
+      id: tokenIds ? `${epoch}-${spec.customer}-collection` : `${epoch}-${spec.customer}-${strain.id}`,
       customer: spec.customer,
       strainId: strain.id,
       targetGrams: spec.target,

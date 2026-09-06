@@ -10,6 +10,7 @@ import {
   WORKER_SHARE,
 } from '../data/economy';
 import { LOCK_STEP_MS } from './clock';
+import { farmerLevel, XP_PER_CHECKPOINT, MAX_FARMER_XP } from '../data/farmerProgression';
 import type { AccessNft, DurationKey, Plot, Position } from '../types';
 
 export function clamp(value: number, min: number, max: number) {
@@ -17,7 +18,7 @@ export function clamp(value: number, min: number, max: number) {
 }
 
 export function xpBonus(xp: number) {
-  return clamp(1 + 0.35 * Math.log10(1 + xp / 1_000), 1, 1.6);
+  return 1 + ((farmerLevel(xp) - 1) / 49) * 0.2;
 }
 
 export function elapsedSteps(position: Position, now: number) {
@@ -63,6 +64,9 @@ export interface PositionMetrics {
   nextStepAt: number;
   endsAt: number;
   waterLevel: number;
+  health: 'healthy' | 'thirsty' | 'wilting' | 'failed';
+  failed: boolean;
+  rescueSteps: number;
 }
 
 export function getPositionMetrics(position: Position, nft: AccessNft, plot: Plot, now: number): PositionMetrics {
@@ -78,12 +82,23 @@ export function getPositionMetrics(position: Position, nft: AccessNft, plot: Plo
     grossBase += gramsPerStep({ ...nft, xp: position.snapshotXp }, plot, position.strainId, level, drySteps);
   }
 
+  // Check every historical interval so watering cannot revive an already failed crop.
+  let failed = false;
+  for (let step = 1; step <= completedSteps; step++) {
+    const last = Math.max(0, ...position.careSteps.filter(care => care < step));
+    if (!position.autoWater && step - last >= 8) failed = true;
+  }
+  const sinceCare = completedSteps - Math.max(0, ...position.careSteps.filter(care => care <= completedSteps));
+  const waterLevel = position.autoWater ? 100 : clamp(position.waterLevel - sinceCare * 25, 0, 100);
+  const health = failed ? 'failed' : waterLevel === 0 ? 'wilting' : waterLevel < 50 ? 'thirsty' : 'healthy';
+  if (failed) grossBase = 0;
   const worker = position.mode === 'worker';
   const playerBase = grossBase * (worker ? WORKER_SHARE : 1);
   const ownerBase = grossBase * (worker ? OWNER_SHARE : 0);
   const endsAt = position.startedAt + preset.steps * LOCK_STEP_MS;
 
   return {
+    health, failed, rescueSteps: position.autoWater ? 8 : Math.max(0, 8 - sinceCare),
     completedSteps,
     totalSteps: preset.steps,
     grossBase,
@@ -92,12 +107,12 @@ export function getPositionMetrics(position: Position, nft: AccessNft, plot: Plo
     playerMatured: playerBase * preset.maturityMultiplier,
     ownerMatured: ownerBase * preset.maturityMultiplier,
     earlyExitPayout: playerBase * EARLY_EXIT_SHARE,
-    xpEarned: Math.round(completedSteps * 50 * PLOT_TIERS[plot.tier].xpMultiplier),
+    xpEarned: !failed && completedSteps >= preset.steps ? Math.max(0, Math.min(completedSteps * XP_PER_CHECKPOINT, MAX_FARMER_XP - nft.xp)) : 0,
     mature: completedSteps >= preset.steps,
     progress: clamp((now - position.startedAt) / (preset.steps * LOCK_STEP_MS), 0, 1),
     nextStepAt: position.startedAt + Math.min(completedSteps + 1, preset.steps) * LOCK_STEP_MS,
     endsAt,
-    waterLevel: position.autoWater ? 100 : clamp(position.waterLevel - (completedSteps - Math.max(0, ...position.careSteps.filter((checkpoint) => checkpoint <= completedSteps))) * 25, 0, 100),
+    waterLevel,
   };
 }
 

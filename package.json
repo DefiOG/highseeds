@@ -14,7 +14,8 @@
     "contracts:compile": "npm run catalog:validate && node scripts/compile-contracts.mjs",
     "contracts:estimate": "npm run contracts:compile && node scripts/estimate-contract-cost.mjs",
     "contracts:deploy:robinhood": "npm run contracts:compile && node scripts/deploy-robinhood.mjs",
-    "test": "npm run contracts:compile && vitest run"
+    "test": "npm run contracts:compile && vitest run",
+    "rewards:keeper": "node scripts/rewards-keeper.mjs"
   },
   "dependencies": {
     "@openzeppelin/contracts": "5.4.0",

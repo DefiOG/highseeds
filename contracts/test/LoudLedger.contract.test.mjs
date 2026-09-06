@@ -11,16 +11,7 @@ const ACCESS_CATALOG = JSON.parse(
   fs.readFileSync(path.join(process.cwd(), 'src', 'data', 'catalog_420_v2.json'), 'utf8'),
 );
 const RARITY_INDEX = new Map(['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary'].map((rarity, index) => [rarity, index]));
-const STRAINS = [
-  'og-kush',
-  'sour-diesel',
-  'blueberry',
-  'granddaddy-purple',
-  'durban-poison',
-  'strawberry-cough',
-  'northern-lights-5',
-  'super-lemon-haze',
-].map((strain) => keccak256(toUtf8Bytes(strain)));
+const STRAINS = ACCESS_CATALOG.map((entry) => keccak256(toUtf8Bytes(entry.slug)));
 
 function artifact(name) {
   return JSON.parse(
@@ -60,6 +51,7 @@ describe('Robinhood Chain contract core', () => {
       STRAINS,
     ]);
     await (await plot.connect(admin).setPositionManager(await positions.getAddress())).wait();
+    await (await access.connect(admin).setPositionManager(await positions.getAddress())).wait();
   }, 30_000);
 
   afterEach(async () => {
@@ -122,7 +114,7 @@ describe('Robinhood Chain contract core', () => {
 
   it('escrows Access, settles checkpoints lazily, and releases it on close', async () => {
     await mintOwnerPair();
-    const strain = keccak256(toUtf8Bytes('og-kush'));
+    const strain = STRAINS[0];
 
     await (await positions.connect(owner).openPosition(1, 1, strain, 1, false, { value: FEE })).wait();
     expect(await access.ownerOf(1)).toBe(await positions.getAddress());
@@ -144,7 +136,7 @@ describe('Robinhood Chain contract core', () => {
 
   it('requires the exact flat protocol fee and activated Access', async () => {
     await mintOwnerPair(0, false);
-    const strain = keccak256(toUtf8Bytes('blueberry'));
+    const strain = STRAINS[0];
 
     await expect(positions.connect(owner).openPosition(1, 1, strain, 1, false)).rejects.toThrow();
     await expect(
@@ -158,7 +150,7 @@ describe('Robinhood Chain contract core', () => {
       positions.connect(owner).openPosition(1, 1, `0x${'00'.repeat(32)}`, 1, false, { value: FEE }),
     ).rejects.toThrow();
 
-    const strain = keccak256(toUtf8Bytes('granddaddy-purple'));
+    const strain = STRAINS[0];
     await (
       await positions.connect(owner).openPosition(1, 1, strain, 1, false, { value: FEE, gasLimit: 3_000_000 })
     ).wait();
@@ -168,7 +160,7 @@ describe('Robinhood Chain contract core', () => {
 
   it('blocks plot transfers while occupied and allows them after release', async () => {
     await mintOwnerPair();
-    const strain = keccak256(toUtf8Bytes('durban-poison'));
+    const strain = STRAINS[0];
     await (await positions.connect(owner).openPosition(1, 1, strain, 4, false, { value: FEE })).wait();
 
     await expect(
@@ -185,11 +177,11 @@ describe('Robinhood Chain contract core', () => {
     await mintAccess(await owner.getAddress());
     await (await plot.connect(admin).mint(await owner.getAddress(), 0)).wait();
     await (await access.connect(owner).setApprovalForAll(await positions.getAddress(), true)).wait();
-    const strain = keccak256(toUtf8Bytes('sour-diesel'));
+    const strain = STRAINS[0];
 
     await (await positions.connect(owner).openPosition(1, 1, strain, 28, false, { value: FEE })).wait();
     await expect(
-      positions.connect(owner).openPosition(2, 1, strain, 28, false, { value: FEE }),
+      positions.connect(owner).openPosition(2, 1, STRAINS[1], 28, false, { value: FEE }),
     ).rejects.toThrow();
     expect(await access.ownerOf(2)).toBe(await owner.getAddress());
   });
@@ -198,7 +190,7 @@ describe('Robinhood Chain contract core', () => {
     await mintAccess(await worker.getAddress());
     await (await plot.connect(admin).mint(await owner.getAddress(), 1)).wait();
     await (await access.connect(worker).approve(await positions.getAddress(), 1)).wait();
-    const strain = keccak256(toUtf8Bytes('strawberry-cough'));
+    const strain = STRAINS[0];
 
     await expect(
       positions.connect(worker).openPosition(1, 1, strain, 2, true, { value: FEE }),
@@ -229,7 +221,7 @@ describe('Robinhood Chain contract core', () => {
     expect(await positions.workerAccessOpen(1, await worker.getAddress())).toBe(true);
     expect(await positions.workerAccessOpen(1, await recipient.getAddress())).toBe(false);
     await expect(
-      positions.connect(recipient).openPosition(2, 1, STRAINS[0], 1, true, { value: FEE }),
+      positions.connect(recipient).openPosition(2, 1, STRAINS[1], 1, true, { value: FEE }),
     ).rejects.toThrow();
   });
 
@@ -250,20 +242,17 @@ describe('Robinhood Chain contract core', () => {
     await (await plot.connect(owner).transferFrom(await owner.getAddress(), await recipient.getAddress(), 1)).wait();
   });
 
-  it('rejects unknown strains and permits an admin to extend the registry', async () => {
+  it('locks each farmer to its catalog specialty with no admin rewrite function', async () => {
     await mintOwnerPair();
-    const newStrain = keccak256(toUtf8Bytes('future-strain'));
-    await expect(
-      positions.connect(owner).openPosition(1, 1, newStrain, 1, false, { value: FEE }),
-    ).rejects.toThrow();
-    await (await positions.connect(admin).setStrainAllowed(newStrain, true)).wait();
-    await (await positions.connect(owner).openPosition(1, 1, newStrain, 1, false, { value: FEE })).wait();
-    expect(await positions.allowedStrain(newStrain)).toBe(true);
+    await expect(positions.connect(owner).openPosition(1, 1, STRAINS[1], 1, false, { value: FEE })).rejects.toThrow();
+    expect(await positions.farmerSpecialty(1)).toBe(STRAINS[0]);
+    expect(await positions.farmerSpecialty(420)).toBe(STRAINS[419]);
+    expect(positions.interface.hasFunction('setStrainAllowed')).toBe(false);
   });
 
   it('always lets the player recover escrowed Access for free during a pause', async () => {
     await mintOwnerPair();
-    const strain = keccak256(toUtf8Bytes('northern-lights-5'));
+    const strain = STRAINS[0];
     await (await positions.connect(owner).openPosition(1, 1, strain, 28, false, { value: FEE })).wait();
 
     await (await positions.connect(admin).pause()).wait();
@@ -297,7 +286,7 @@ describe('Robinhood Chain contract core', () => {
 
   it('uses pull-based fee withdrawal and rejects unauthorized callers', async () => {
     await mintOwnerPair();
-    const strain = keccak256(toUtf8Bytes('super-lemon-haze'));
+    const strain = STRAINS[0];
     await (await positions.connect(owner).openPosition(1, 1, strain, 1, false, { value: FEE })).wait();
 
     await expect(
@@ -306,4 +295,62 @@ describe('Robinhood Chain contract core', () => {
     await (await positions.connect(admin).withdrawFees(await recipient.getAddress(), FEE)).wait();
     expect(await positions.accruedFees()).toBe(0n);
   });
+  it('time-locks XP and HC, pays the player rather than the keeper, and settles exactly once', async () => {
+    await mintOwnerPair();
+    await (await positions.connect(owner).openPosition(1, 1, STRAINS[0], 2, false, { value: FEE })).wait();
+    await connection.provider.request({ method: 'evm_increaseTime', params: [SIX_HOURS] });
+    await connection.provider.request({ method: 'evm_mine', params: [] });
+    await expect(positions.connect(recipient).settleMaturePosition(1)).rejects.toThrow();
+    expect((await access.accessData(1)).xp).toBe(0n);
+    expect(await positions.gameCredits(await owner.getAddress())).toBe(0n);
+    await connection.provider.request({ method: 'evm_increaseTime', params: [SIX_HOURS] });
+    await connection.provider.request({ method: 'evm_mine', params: [] });
+    await (await positions.connect(recipient).settleMaturePosition(1)).wait();
+    expect((await access.accessData(1)).xp).toBe(100n);
+    expect(await positions.gameCredits(await owner.getAddress())).toBe(50n);
+    expect(await positions.gameCredits(await recipient.getAddress())).toBe(0n);
+    await expect(positions.connect(recipient).settleMaturePosition(1)).rejects.toThrow();
+    expect((await access.accessData(1)).xp).toBe(100n);
+    await (await access.connect(owner).transferFrom(await owner.getAddress(), await worker.getAddress(), 1)).wait();
+    expect((await access.accessData(1)).xp).toBe(100n);
+    expect(await positions.gameCredits(await worker.getAddress())).toBe(0n);
+  });
+
+  it('awards no XP or HC for early closure or emergency withdrawal', async () => {
+    await mintOwnerPair();
+    await (await positions.connect(owner).openPosition(1, 1, STRAINS[0], 4, false, { value: FEE })).wait();
+    await connection.provider.request({ method: 'evm_increaseTime', params: [SIX_HOURS] });
+    await (await positions.connect(owner).closePosition(1, { value: FEE })).wait();
+    expect((await access.accessData(1)).xp).toBe(0n);
+    expect(await positions.gameCredits(await owner.getAddress())).toBe(0n);
+    await (await access.connect(owner).approve(await positions.getAddress(), 1)).wait();
+    await (await positions.connect(owner).openPosition(1, 1, STRAINS[0], 1, false, { value: FEE })).wait();
+    await connection.provider.request({ method: 'evm_increaseTime', params: [SIX_HOURS] });
+    await (await positions.connect(admin).pause()).wait();
+    await (await positions.connect(owner).emergencyWithdraw(2)).wait();
+    expect((await access.accessData(1)).xp).toBe(0n);
+    expect(await positions.gameCredits(await owner.getAddress())).toBe(0n);
+  });
+
+  it('caps farmer level and XP, and prevents direct XP writes even by the admin', async () => {
+    await mintOwnerPair();
+    await expect(access.connect(admin).addXp(1, 1000)).rejects.toThrow();
+    await expect(access.connect(owner).addXp(1, 1000)).rejects.toThrow();
+    await expect(access.connect(admin).setPositionManager(await positions.getAddress())).rejects.toThrow();
+    for (let round = 0; round < 10; round++) {
+      await (await access.connect(owner).approve(await positions.getAddress(), 1)).wait();
+      await (await positions.connect(owner).openPosition(1, 1, STRAINS[0], 28, false, { value: FEE })).wait();
+      await connection.provider.request({ method: 'evm_increaseTime', params: [SIX_HOURS * 28] });
+      await (await positions.connect(recipient).settleMaturePosition(round + 1)).wait();
+    }
+    expect((await access.accessData(1)).xp).toBe(12250n);
+    expect(await access.levelOf(1)).toBe(50n);
+    expect(await positions.gameCredits(await owner.getAddress())).toBe(7000n);
+    const inactive = await mintAccess(await owner.getAddress(), false);
+    await (await positions.connect(owner).activateWithCredits(inactive)).wait();
+    expect(await access.isActivated(inactive)).toBe(true);
+    expect(await positions.gameCredits(await owner.getAddress())).toBe(2800n);
+    await expect(positions.connect(owner).activateWithCredits(inactive)).rejects.toThrow();
+  }, 30000);
+
 });

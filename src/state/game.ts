@@ -1,3 +1,4 @@
+import { migrateBedAssignments } from '../lib/farmWorld';
 import { useEffect, useMemo, useState } from 'react';
 import { STRAINS } from '../data/economy';
 import { createCrewOperationState, crewWeekWindow } from '../data/crew';
@@ -70,7 +71,7 @@ function loadState(): GameState {
         grams: { ...starterState.grams, ...parsed.grams },
         orderFills: { ...parsed.orderFills },
         nfts: migratedNfts,
-        positions: (parsed.positions ?? []).map((position) => ({ ...position, nftId: genesisAccessId(position.nftId), careSteps: position.careSteps ?? [0] })),
+        positions: migrateBedAssignments({ plots: parsed.plots ?? starterState.plots, positions: (parsed.positions ?? []).map((position) => ({ ...position, nftId: genesisAccessId(position.nftId), careSteps: position.careSteps ?? [0] })) }),
         plots: parsed.plots ?? starterState.plots,
         crewOperation: parsed.crewOperation?.weekId === weekId
           ? { ...createCrewOperationState(weekId), ...parsed.crewOperation }
@@ -103,5 +104,6 @@ export function useGameState() {
 
 export function resetSimulation() {
   localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem('weed-hustle-farm-player-v1');
   location.reload();
 }

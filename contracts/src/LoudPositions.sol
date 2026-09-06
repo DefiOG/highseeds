@@ -9,6 +9,9 @@ import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Recei
 
 interface ILoudAccess is IERC721 {
     function isActivated(uint256 tokenId) external view returns (bool);
+    function addXp(uint256 tokenId, uint64 amount) external returns (uint64);
+    function accessData(uint256 tokenId) external view returns (uint64 xp, uint8 rarity, bool activated);
+    function setActivated(uint256 tokenId, bool activated) external;
 }
 
 interface ILoudPlot is IERC721 {
@@ -16,7 +19,7 @@ interface ILoudPlot is IERC721 {
 }
 
 /// @title Loud Ledger Positions
-/// @notice Escrows Access NFTs and timestamps 24/7 positions without issuing transferable game currency.
+/// @notice Escrows farmer NFTs and time-locks non-transferable maturity rewards.
 /// @dev Settlement is O(1): elapsed checkpoints are calculated arithmetically and never iterated.
 contract LoudPositions is AccessControl, Pausable, ReentrancyGuard, IERC721Receiver {
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
@@ -24,7 +27,11 @@ contract LoudPositions is AccessControl, Pausable, ReentrancyGuard, IERC721Recei
 
     uint256 public constant PROTOCOL_FEE = 0.000001 ether;
     uint64 public constant CHECKPOINT_SECONDS = 6 hours;
-    uint32 public constant CONFIG_VERSION = 2;
+    uint32 public constant CONFIG_VERSION = 3;
+    uint64 public constant XP_PER_CHECKPOINT = 50;
+    uint256 public constant HC_PER_CHECKPOINT = 25;
+    uint256 public constant ACTIVATION_HC = 4_200;
+    uint256 public constant GENESIS_SIZE = 420;
     uint16 public constant BPS_DENOMINATOR = 10_000;
     uint16 public constant WORKER_SHARE_BPS = 6_500;
     uint16 public constant OWNER_SHARE_BPS = 3_500;
@@ -61,9 +68,10 @@ contract LoudPositions is AccessControl, Pausable, ReentrancyGuard, IERC721Recei
     error AccessIsActive(uint256 accessId);
     error NothingToWithdraw();
     error FeeTransferFailed();
+    error InsufficientGameCredits();
+    error AlreadyActivated();
 
     event WorkerAccessChanged(uint256 indexed plotId, address indexed plotOwner, address indexed worker, bool enabled);
-    event StrainAllowedChanged(bytes32 indexed strainId, bool allowed);
     event PositionOpened(
         uint256 indexed positionId,
         address indexed player,
@@ -88,6 +96,9 @@ contract LoudPositions is AccessControl, Pausable, ReentrancyGuard, IERC721Recei
     );
     event FeesWithdrawn(address indexed recipient, uint256 amount);
     event UntrackedAccessRecovered(uint256 indexed accessId, address indexed recipient);
+    event FarmerSpecialtyCommitted(uint256 indexed accessId, bytes32 specialty);
+    event HarvestRewarded(uint256 indexed positionId, address indexed player, uint256 indexed accessId, uint64 xpAwarded, uint256 hcAwarded);
+    event FarmerActivatedWithCredits(address indexed player, uint256 indexed accessId, uint256 spentHC);
 
     ILoudAccess public immutable accessToken;
     ILoudPlot public immutable plotToken;
@@ -98,13 +109,17 @@ contract LoudPositions is AccessControl, Pausable, ReentrancyGuard, IERC721Recei
     mapping(uint256 accessId => uint256 positionId) public activePositionForAccess;
     mapping(uint256 plotId => uint256 count) public activePositionCountByPlot;
     mapping(uint256 plotId => mapping(address worker => address approvingOwner)) private _workerApprovalOwner;
-    mapping(bytes32 strainId => bool allowed) public allowedStrain;
+    mapping(uint256 accessId => bytes32 strainId) public farmerSpecialty;
+    // Non-transferable, non-redeemable gameplay accounting. Deliberately not ERC-20.
+    mapping(address player => uint256 balance) public gameCredits;
+    bytes32 public immutable catalogHash;
     address private _expectedAccessFrom;
     uint256 private _expectedAccessId;
 
     constructor(address admin, address accessAddress, address plotAddress, bytes32[] memory initialStrains) {
         if (admin == address(0) || accessAddress == address(0) || plotAddress == address(0)) revert InvalidAddress();
-        if (initialStrains.length == 0) revert InvalidStrain();
+        if (initialStrains.length != GENESIS_SIZE) revert InvalidStrain();
+        catalogHash = keccak256(abi.encode(initialStrains));
         accessToken = ILoudAccess(accessAddress);
         plotToken = ILoudPlot(plotAddress);
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
@@ -112,8 +127,8 @@ contract LoudPositions is AccessControl, Pausable, ReentrancyGuard, IERC721Recei
         _grantRole(TREASURER_ROLE, admin);
         for (uint256 i = 0; i < initialStrains.length; i++) {
             if (initialStrains[i] == bytes32(0)) revert InvalidStrain();
-            allowedStrain[initialStrains[i]] = true;
-            emit StrainAllowedChanged(initialStrains[i], true);
+            farmerSpecialty[i + 1] = initialStrains[i];
+            emit FarmerSpecialtyCommitted(i + 1, initialStrains[i]);
         }
     }
 
@@ -129,10 +144,13 @@ contract LoudPositions is AccessControl, Pausable, ReentrancyGuard, IERC721Recei
             && plotToken.ownerOf(plotId) == _workerApprovalOwner[plotId][worker];
     }
 
-    function setStrainAllowed(bytes32 strainId, bool allowed) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (strainId == bytes32(0)) revert InvalidStrain();
-        allowedStrain[strainId] = allowed;
-        emit StrainAllowedChanged(strainId, allowed);
+    function activateWithCredits(uint256 accessId) external whenNotPaused nonReentrant {
+        if (accessToken.ownerOf(accessId) != msg.sender) revert InvalidMode();
+        if (accessToken.isActivated(accessId)) revert AlreadyActivated();
+        if (gameCredits[msg.sender] < ACTIVATION_HC) revert InsufficientGameCredits();
+        gameCredits[msg.sender] -= ACTIVATION_HC;
+        accessToken.setActivated(accessId, true);
+        emit FarmerActivatedWithCredits(msg.sender, accessId, ACTIVATION_HC);
     }
 
     function openPosition(
@@ -144,7 +162,7 @@ contract LoudPositions is AccessControl, Pausable, ReentrancyGuard, IERC721Recei
     ) external payable whenNotPaused nonReentrant returns (uint256 positionId) {
         _requireProtocolFee();
         if (!_validDuration(durationSteps)) revert InvalidDuration(durationSteps);
-        if (!allowedStrain[strainId]) revert InvalidStrain();
+        if (strainId == bytes32(0) || farmerSpecialty[accessId] != strainId) revert InvalidStrain();
         if (accessToken.ownerOf(accessId) != msg.sender) revert InvalidMode();
         if (!accessToken.isActivated(accessId)) revert AccessNotActivated(accessId);
         if (activePositionForAccess[accessId] != 0) revert AccessAlreadyInUse(accessId);
@@ -289,6 +307,13 @@ contract LoudPositions is AccessControl, Pausable, ReentrancyGuard, IERC721Recei
         position.settledSteps = steps;
         activePositionForAccess[position.accessId] = 0;
         activePositionCountByPlot[position.plotId] -= 1;
+        if (mature && !emergency) {
+            (uint64 previousXp,,) = accessToken.accessData(position.accessId);
+            uint64 newXp = accessToken.addXp(position.accessId, uint64(steps) * XP_PER_CHECKPOINT);
+            uint256 credits = uint256(steps) * HC_PER_CHECKPOINT;
+            gameCredits[position.player] += credits;
+            emit HarvestRewarded(positionId, position.player, position.accessId, newXp - previousXp, credits);
+        }
         accessToken.safeTransferFrom(address(this), position.player, position.accessId);
 
         emit PositionClosed(positionId, position.player, steps, mature, emergency, uint64(block.timestamp));

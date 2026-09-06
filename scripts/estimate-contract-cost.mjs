@@ -7,10 +7,7 @@ import { network } from 'hardhat';
 const connection = await network.create('hardhatRobinhood');
 const [signer] = await connection.ethers.getSigners();
 const artifactRoot = path.join(process.cwd(), 'contracts', 'artifacts');
-const strainIds = [
-  'bruce-banner-3', 'strawberry-cough', 'og-kush', 'super-lemon-haze', 'durban-poison',
-  'sour-diesel', 'northern-lights-5', 'granddaddy-purple', 'super-silver-haze', 'blueberry',
-].map(id);
+const strainIds = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'src/data/catalog_420_v2.json'), 'utf8')).map((entry) => id(entry.slug));
 
 function artifact(name) {
   return JSON.parse(fs.readFileSync(path.join(artifactRoot, `${name}.json`), 'utf8'));
@@ -42,9 +39,11 @@ const bindingReceipt = await (
   await plot.contract.setPositionManager(await positions.contract.getAddress())
 ).wait();
 
+const accessBindingReceipt = await (await access.contract.setPositionManager(await positions.contract.getAddress())).wait();
+
 const gasPriceGwei = process.env.GAS_PRICE_GWEI || '0.034924';
 const gasPrice = parseUnits(gasPriceGwei, 'gwei');
-const totalGas = access.gasUsed + plot.gasUsed + positions.gasUsed + bindingReceipt.gasUsed;
+const totalGas = access.gasUsed + plot.gasUsed + positions.gasUsed + bindingReceipt.gasUsed + accessBindingReceipt.gasUsed;
 
 console.table([
   { contract: 'LoudAccess', creationBytes: access.creationBytes, runtimeBytes: access.runtimeBytes, gasUsed: access.gasUsed.toString() },

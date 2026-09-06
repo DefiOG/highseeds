@@ -2,7 +2,7 @@
   "catalog_version": "2.0",
   "total_strains": 420,
   "status": "generated gameplay estimate \u2014 not lab-verified, not live market data",
-  "intended_use": "standalone strain gallery / future 'Seed Vault' collection browser \u2014 NOT wired into the 10-strain game economy (economy.ts) without a separate balance pass",
+  "intended_use": "420 one-to-one NFT identities connected to local planting and work simulation; generated gameplay values require playtesting before production release",
   "rarity_tiers": {
     "Legendary": 13,
     "Epic": 34,

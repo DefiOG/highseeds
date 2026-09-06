@@ -1,3 +1,8 @@
+import { farmerLevel, maturityReward } from './data/farmerProgression';
+import { useDialogFocus } from './lib/useDialogFocus';
+import { harvestPosition, plantPosition, settleMatureCrops } from './lib/farmActions';
+import { farmSlots } from './lib/farmWorld';
+import { FarmWorld } from './components/FarmWorld';
 import {
   Activity,
   ArrowRight,
@@ -47,7 +52,7 @@ import crewOperationSeal from './assets/crew-operation-seal-ui.webp';
 import demandDispatchHero from './assets/demand-dispatch-hero-ui.webp';
 import growthProgression from './assets/growth-progression-ui.webp';
 import pixelGrowRoom from './assets/pixel-grow-room-ui.png';
-import { AccessSeedArt } from './components/AccessSeedArt';
+import { FarmerArt } from './components/FarmerArt';
 import {
   ACCESS_CATALOG,
   ACCESS_COLLECTION_SIZE,
@@ -82,6 +87,8 @@ import {
   CUSTOMERS,
   DURATION_PRESETS,
   getDailyContracts,
+  getNftStrain,
+  nftCanPlantStrain,
   PLOT_TIERS,
   PROTOCOL_FEE_ETH,
   RARITIES,
@@ -122,15 +129,16 @@ type ConfirmState = {
 };
 
 const navItems = [
-  { path: '/', label: 'Overview', icon: Grid2X2 },
+  { path: '/', label: 'My farm', icon: Leaf },
+  { path: '/overview', label: 'Overview', icon: Grid2X2 },
   { path: '/practice', label: 'Practice run', icon: Sparkles },
   { path: '/plant', label: 'Plant', icon: Sprout },
   { path: '/work', label: 'Go to work', icon: BriefcaseBusiness },
   { path: '/contracts', label: 'Demand board', icon: Store },
   { path: '/crew', label: 'Crew', icon: UsersRound },
-  { path: '/mint', label: 'Mint Access', icon: PackageOpen },
+  { path: '/mint', label: 'Recruit farmer', icon: PackageOpen },
   { path: '/gallery', label: 'Gallery', icon: Database },
-  { path: '/access', label: 'Access NFTs', icon: Hexagon },
+  { path: '/access', label: 'Farmer NFTs', icon: Hexagon },
   { path: '/land', label: 'Land', icon: LandPlot },
   { path: '/market-lab', label: 'Market pulse', icon: BarChart3, lab: true },
 ];
@@ -181,6 +189,7 @@ function availableNfts(state: GameState) {
 export default function App() {
   const { state, setState } = useGameState();
   const [path, setPath] = useState(routePath);
+  useEffect(() => { const tick = () => setState(current => settleMatureCrops(current, Date.now())); tick(); const timer = window.setInterval(tick, 1000); return () => clearInterval(timer); }, [setState]);
   const [now, setNow] = useState(Date.now());
   const [mobileNav, setMobileNav] = useState(false);
   const [windowMinimized, setWindowMinimized] = useState(false);
@@ -287,7 +296,7 @@ export default function App() {
     const remainingAfter = availableAccessCatalog(state.nfts.map((nft) => nft.tokenId)).length - 1;
     setConfirm({
       eyebrow: 'Prototype mint reveal',
-      title: 'Generate one local Access credential',
+      title: 'Generate one local Farmer credential',
       body: 'This demonstration selects one unowned identity from the fixed catalog. It does not call a contract, charge ETH, reserve a production NFT, or establish future mint terms.',
       lines: [
         { label: 'Prototype price', value: '0 ETH' },
@@ -331,11 +340,12 @@ export default function App() {
       ],
       confirmLabel: 'Confirm simulated purchase',
       onConfirm: () => {
-        const id = 6_000 + Math.floor(Math.random() * 3_000);
+        const id = Math.max(6_000, ...state.plots.map(item => item.id)) + 1;
         setState((current) => ({
           ...current,
           ethBalance: current.ethBalance - tier.priceEth,
           plots: [...current.plots, { id, tier: tierKey, owned: true, owner: 'You', reliability: 100 }],
+          farmMilestones: { ...current.farmMilestones, expanded: true },
           activity: [createActivity(`Plot #${id} acquired`, `${tier.label} · ${tier.slots} simulated position slots.`), ...current.activity],
         }));
         setConfirm(null);
@@ -344,8 +354,9 @@ export default function App() {
     });
   };
 
-  const openPosition = (plot: Plot, nft: AccessNft, strain: Strain, duration: DurationKey, mode: Position['mode'], autoWater: boolean) => {
+  const openPosition = (plot: Plot, nft: AccessNft, strain: Strain, duration: DurationKey, mode: Position['mode'], autoWater: boolean, requestedSlot?: number) => {
     if (!requireWallet()) return;
+    if (!nftCanPlantStrain(nft.tokenId, strain.id)) return notify('Strain mismatch', 'Each Access NFT grows its own collection strain.', 'warning');
     const positions = plotPositions(state, plot.id);
     if (positions.length >= PLOT_TIERS[plot.tier].slots) return notify('Plot is full', 'Choose another listing or release a position.', 'warning');
     const reserve = autoWater ? autoWaterReserve(duration) : 0;
@@ -367,6 +378,7 @@ export default function App() {
         const position: Position = {
           id: `pos-${Date.now()}-${nft.tokenId}`,
           plotId: plot.id,
+          slotIndex: requestedSlot ?? farmSlots(state).find((slot) => slot.plot.id === plot.id && !slot.position)?.number! - 1,
           nftId: nft.tokenId,
           strainId: strain.id,
           duration,
@@ -379,17 +391,10 @@ export default function App() {
           autoWater,
           autoWaterReserveHC: reserve,
         };
-        setState((current) => ({
-          ...current,
-          ethBalance: current.ethBalance - PROTOCOL_FEE_ETH,
-          hcBalance: current.hcBalance - reserve,
-          plots: current.plots.some((item) => item.id === plot.id) ? current.plots : [...current.plots, plot],
-          positions: [...current.positions, position],
-          activity: [createActivity(`${strain.name} ${mode === 'worker' ? 'work' : 'grow'} opened`, `${DURATION_PRESETS[duration].label} · plot #${plot.id} · ${share}.`), ...current.activity],
-        }));
+        setState((current) => plantPosition(current, position, plot));
         setConfirm(null);
-        notify('Position opened', 'The first production checkpoint settles after six hours.');
-        go(`/positions/${position.id}`);
+        notify('Seed planted', FAST_TIME_ENABLED ? 'Your first crop is growing. One checkpoint takes six seconds in this playtest.' : 'Your first crop is growing. One checkpoint takes six hours.');
+        if (path !== '/' && path !== '/farm') go(`/positions/${position.id}`);
       },
     });
   };
@@ -397,13 +402,22 @@ export default function App() {
   const careForPosition = (position: Position) => {
     const plot = state.plots.find((item) => item.id === position.plotId);
     if (!plot || position.autoWater || state.hcBalance < 40) return;
-    const steps = elapsedSteps(position, now);
-    setState((current) => ({
-      ...current,
-      hcBalance: current.hcBalance - 40,
-      positions: current.positions.map((item) => item.id === position.id ? { ...item, waterLevel: 100, waterStep: steps, careSteps: [...item.careSteps, steps] } : item),
-      activity: [createActivity('Manual care completed', `${position.id} restored to full water · 40 HC.`), ...current.activity],
-    }));
+    const farmer = state.nfts.find(item => item.tokenId === position.nftId);
+    if (!farmer) return;
+    const health = getPositionMetrics(position, farmer, plot, now);
+    if (health.failed || health.mature || health.waterLevel >= 100) return;
+    setState((current) => {
+      const live = current.positions.find(item => item.id === position.id);
+      const liveFarmer = current.nfts.find(item => item.tokenId === position.nftId);
+      if (!live || !liveFarmer || current.hcBalance < 40) return current;
+      const status = getPositionMetrics(live, liveFarmer, plot, Date.now());
+      if (live.autoWater || status.failed || status.mature || status.waterLevel >= 100) return current;
+      return {
+        ...current, hcBalance: current.hcBalance - 40,
+        positions: current.positions.map(item => item.id === live.id ? { ...item, waterLevel: 100, waterStep: status.completedSteps, careSteps: [...item.careSteps, status.completedSteps] } : item),
+        activity: [createActivity('Manual care completed', `${live.id} restored to full water / 40 HC.`), ...current.activity],
+      };
+    });
     notify('Care complete', 'The current water taper has been reset.');
   };
 
@@ -413,37 +427,28 @@ export default function App() {
     const strain = STRAINS.find((item) => item.id === position.strainId);
     if (!plot || !nft || !strain || state.ethBalance < PROTOCOL_FEE_ETH) return;
     const metrics = getPositionMetrics(position, nft, plot, now);
+    const reward = maturityReward(metrics.totalSteps, metrics.mature && !metrics.failed, nft.xp);
     const payout = metrics.mature ? metrics.playerMatured : metrics.earlyExitPayout;
     const ownerPayout = metrics.mature ? metrics.ownerMatured : metrics.ownerBase;
     const usedWater = position.autoWater ? metrics.completedSteps * WATER_COST_PER_STEP : 0;
     const refund = Math.max(0, position.autoWaterReserveHC - usedWater);
     setConfirm({
       eyebrow: metrics.mature ? 'Completed position' : 'Early exit settlement',
-      title: metrics.mature ? `Harvest ${strain.name}` : `Exit ${strain.name} early`,
-      body: metrics.mature ? 'The completion bonus is vested.' : 'Only current accrued base is affected; previously settled inventory is never touched.',
+      title: metrics.failed ? 'Clear failed crop' : metrics.mature ? `Harvest ${strain.name}` : `Exit ${strain.name} early`,
+      body: metrics.failed ? 'This crop earns no harvest or rewards. Your farmer and previously earned XP are safe.' : metrics.mature ? 'The completion bonus is vested.' : 'Only current accrued base is affected; previously settled inventory is never touched.',
       lines: [
+        { label: 'Maturity rewards', value: `${reward.xp} farmer XP + ${reward.hc} HC`, tone: 'accent' },
         { label: 'Player payout', value: `${formatNumber(payout)}g`, tone: 'accent' },
         ...(position.mode === 'worker' ? [{ label: 'Demo owner allocation', value: `${formatNumber(ownerPayout)}g` }] : []),
         ...(!metrics.mature ? [{ label: 'Early-exit share', value: '80% of player base', tone: 'danger' as const }] : []),
         { label: 'Unused water refund', value: `${refund} HC` },
         { label: 'Release fee', value: `${PROTOCOL_FEE_ETH.toFixed(6)} ETH`, tone: 'danger' },
       ],
-      confirmLabel: metrics.mature ? 'Harvest and release' : 'Confirm early exit',
+      confirmLabel: metrics.failed ? 'Clear and release farmer' : metrics.mature ? 'Harvest and release' : 'Confirm early exit',
       onConfirm: () => {
-        setState((current) => ({
-          ...current,
-          ethBalance: current.ethBalance - PROTOCOL_FEE_ETH,
-          hcBalance: current.hcBalance + refund,
-          grams: { ...current.grams, [strain.id]: (current.grams[strain.id] ?? 0) + payout },
-          reputation: current.reputation + (metrics.mature ? 3 : 0),
-          seasonXp: current.seasonXp + (metrics.mature ? 25 : 0),
-          networkOwnerGrams: current.networkOwnerGrams + ownerPayout,
-          nfts: current.nfts.map((item) => item.tokenId === nft.tokenId ? { ...item, xp: item.xp + metrics.xpEarned } : item),
-          positions: current.positions.filter((item) => item.id !== position.id),
-          activity: [createActivity(metrics.mature ? `${formatNumber(payout)}g harvested` : `${formatNumber(payout)}g early settlement`, `${strain.name} · +${metrics.xpEarned} Access XP${ownerPayout ? ` · ${formatNumber(ownerPayout)}g demo owner allocation` : ''}.`), ...current.activity],
-        }));
+        setState((current) => harvestPosition(current, position.id, now));
         setConfirm(null);
-        notify(metrics.mature ? 'Harvest complete' : 'Early exit settled', `${formatNumber(payout)}g moved to inventory.`);
+        notify(metrics.failed ? 'Failed crop cleared' : metrics.mature ? 'Harvest complete' : 'Early exit settled', `${formatNumber(payout)}g moved to inventory.`);
         go('/');
       },
     });
@@ -471,7 +476,7 @@ export default function App() {
       confirmLabel: 'Confirm delivery',
       onConfirm: () => {
         setState((current) => {
-          const liveOrder = getDailyContracts(Date.now()).find((item) => item.id === order.id);
+          const liveOrder = getDailyContracts(Date.now(), current.nfts.filter((nft) => nft.activated).map((nft) => nft.tokenId)).find((item) => item.id === order.id);
           if (!liveOrder) return current;
           const currentFilled = current.orderFills[order.id] ?? 0;
           const currentRemaining = Math.max(0, liveOrder.targetGrams - currentFilled);
@@ -484,6 +489,7 @@ export default function App() {
             hcBalance: current.hcBalance + finalAccepted * liveOrder.unitPrice,
             grams: { ...current.grams, [liveOrder.strainId]: Math.max(0, currentAvailable - finalAccepted) },
             orderFills: { ...current.orderFills, [liveOrder.id]: currentFilled + finalAccepted },
+            farmMilestones: { ...current.farmMilestones, delivered: true },
             reputation: current.reputation + (completesNow ? liveOrder.reputationReward : 0),
             seasonXp: current.seasonXp + (completesNow ? liveOrder.seasonXpReward : 0),
             activity: [createActivity(completesNow ? 'Contract completed' : 'Partial delivery recorded', `${liveOrder.title} · ${formatNumber(finalAccepted)}g · +${formatNumber(finalAccepted * liveOrder.unitPrice)} HC.`), ...current.activity],
@@ -581,7 +587,9 @@ export default function App() {
 
   const positionMatch = path.match(/^\/positions\/(.+)$/);
   const plantMatch = path.match(/^\/plant(?:\/(\d+))?$/);
-  const context = { state, now, go, activateNft, mintAccess, buyPlot, openPosition, careForPosition, closePosition, fulfillOrder, contributeCrew, claimCrewReward, completePractice };
+  const equipFarmer = (tokenId: number) => setState(current => current.nfts.some(nft => nft.tokenId === tokenId) ? { ...current, farmerAvatarId: tokenId } : current);
+  const setAutoHarvest = (enabled: boolean) => setState(current => ({ ...current, autoHarvest: enabled }));
+  const context = { state, now, go, equipFarmer, setAutoHarvest, activateNft, mintAccess, buyPlot, openPosition, careForPosition, closePosition, fulfillOrder, contributeCrew, claimCrewReward, completePractice };
   let page: ReactNode;
   if (positionMatch) {
     const position = state.positions.find((item) => item.id === positionMatch[1]);
@@ -597,6 +605,8 @@ export default function App() {
   else if (path === '/land') page = <LandView {...context} />;
   else if (path === '/market-lab') page = <MarketLabView now={now} />;
   else page = <Dashboard {...context} />;
+
+  if (!(import.meta.env.DEV && new URLSearchParams(window.location.search).get('developer') === '1')) return <div className="farm-shell"><FarmWorld {...context} route={path} connectWallet={connectWallet} blocked={Boolean(confirm)} />{confirm && <ConfirmationDialog details={confirm} close={() => setConfirm(null)} />}{toast && <Toast toast={toast} close={() => setToast(null)} />}</div>;
 
   const totalGrams = Object.values(state.grams).reduce((sum, value) => sum + value, 0);
   const season = currentSeason(now);
@@ -626,7 +636,7 @@ export default function App() {
           const active = item.path === '/' ? path === '/' : path.startsWith(item.path);
           return <button key={item.path} className={active ? 'nav-item active' : 'nav-item'} onClick={() => go(item.path)}><item.icon size={17} /><span>{item.label}</span>{item.lab && <small className="nav-lab-badge">LAB</small>}{active && <span className="active-pip" />}</button>;
         })}</nav>
-        <div className="protocol-card"><div className="protocol-card-top"><Trophy size={15} /><span>{season.id} · Day {season.day}/{season.totalDays}</span></div><strong>{formatNumber(state.seasonXp, 0)} season XP</strong><p>Daily demand resets at 00:00 UTC. Ownership and Access XP do not.</p><div className="protocol-progress"><span style={{ width: `${(season.day / season.totalDays) * 100}%` }} /></div></div>
+        <div className="protocol-card"><div className="protocol-card-top"><Trophy size={15} /><span>{season.id} · Day {season.day}/{season.totalDays}</span></div><strong>{formatNumber(state.seasonXp, 0)} season XP</strong><p>Daily demand resets at 00:00 UTC. Ownership and Farmer XP do not.</p><div className="protocol-progress"><span style={{ width: `${(season.day / season.totalDays) * 100}%` }} /></div></div>
         <button className="reset-button" onClick={resetSimulation}><RotateCcw size={15} /> Reset economy v2</button>
       </aside>
       <main className={!windowOpen ? 'main-shell closed' : windowMinimized ? 'main-shell minimized' : 'main-shell'} style={{ '--window-x': `${windowOffset.x}px`, '--window-y': `${windowOffset.y}px` } as CSSProperties}>
@@ -651,14 +661,16 @@ export default function App() {
   );
 }
 
-type ViewContext = {
+export type ViewContext = {
+  equipFarmer: (tokenId: number) => void;
+  setAutoHarvest: (enabled: boolean) => void;
   state: GameState;
   now: number;
   go: (path: string) => void;
   activateNft: (nft: AccessNft) => void;
   mintAccess: () => void;
   buyPlot: (tier: PlotTierKey) => void;
-  openPosition: (plot: Plot, nft: AccessNft, strain: Strain, duration: DurationKey, mode: Position['mode'], autoWater: boolean) => void;
+  openPosition: (plot: Plot, nft: AccessNft, strain: Strain, duration: DurationKey, mode: Position['mode'], autoWater: boolean, requestedSlot?: number) => void;
   careForPosition: (position: Position) => void;
   closePosition: (position: Position) => void;
   fulfillOrder: (order: DemandContract, amount: number) => void;
@@ -676,7 +688,7 @@ function PageHeading({ eyebrow, title, description, action }: { eyebrow: string;
 }
 
 function Dashboard({ state, now, go }: ViewContext) {
-  const contracts = getDailyContracts(now);
+  const contracts = getDailyContracts(now, state.nfts.filter((nft) => nft.activated).map((nft) => nft.tokenId));
   const totalGrams = Object.values(state.grams).reduce((sum, value) => sum + value, 0);
   return <>
     {!state.tutorialComplete && <section className="onboarding-banner"><div><p className="eyebrow">Start here · no wallet required</p><h2>Learn the complete loop in three minutes.</h2><p>Practice Plant → Care → Harvest → Deliver before using any simulated balance.</p><button className="button primary" onClick={() => go('/practice')}><Sparkles size={16} /> Start practice run</button></div><img src={pixelGrowRoom} alt="Pixel-art indoor grow room with irrigation and control equipment" /></section>}
@@ -709,13 +721,12 @@ function PlantView({ state, openPosition, initialPlotId }: ViewContext & { initi
   const nfts = availableNfts(state);
   const [plotId, setPlotId] = useState(plots.some((plot) => plot.id === initialPlotId) ? initialPlotId! : plots[0]?.id ?? 0);
   const [nftId, setNftId] = useState(nfts[0]?.tokenId ?? 0);
-  const [strainId, setStrainId] = useState(STRAINS[0].id);
   const [duration, setDuration] = useState<DurationKey>('24h');
   const [autoWater, setAutoWater] = useState(true);
   const plot = plots.find((item) => item.id === plotId) ?? plots[0];
   const nft = nfts.find((item) => item.tokenId === nftId) ?? nfts[0];
-  const strain = STRAINS.find((item) => item.id === strainId)!;
-  return <><PageHeading eyebrow="Owner path · 100% share" title="Plant a 24/7 position." description="Choose an open simulated plot slot, a crop with a distinct production profile, and a restrained commitment bonus." />{(!plots.length || !nfts.length) && <div className="notice-line warning"><LockKeyhole size={17} /><div><strong>{!nfts.length ? 'No active available Access NFT.' : 'No open owned plot slots.'}</strong><span>Activate or release Access, or acquire additional functional capacity.</span></div></div>}<section className="configure-grid"><div className="panel config-panel"><ConfigSelect index="01" title="Plot slot" description="Capacity is enforced across first-class positions."><div className="selection-grid">{plots.map((item) => { const used = plotPositions(state, item.id).length; return <button key={item.id} className={plotId === item.id ? 'selected' : ''} onClick={() => setPlotId(item.id)}><strong>{PLOT_TIERS[item.tier].label} #{item.id}</strong><small>{used}/{PLOT_TIERS[item.tier].slots} occupied</small></button>; })}</div></ConfigSelect><ConfigSelect index="02" title="Access credential" description="Rarity and Access XP provide the displayed output multipliers."><div className="selection-grid">{nfts.map((item) => <button key={item.tokenId} className={nftId === item.tokenId ? 'selected' : ''} onClick={() => setNftId(item.tokenId)}><strong>Access #{item.tokenId}</strong><small>{item.rarity} · {RARITIES[item.rarity].multiplier.toFixed(2)}× · {formatNumber(item.xp, 0)} XP</small></button>)}</div></ConfigSelect><ConfigSelect index="03" title="Legacy strain" description="Yield and price now trade off; demand rotates daily."><div className="strain-grid">{STRAINS.map((item) => <button key={item.id} className={strainId === item.id ? 'strain-option selected' : 'strain-option'} onClick={() => setStrainId(item.id)}><div><strong>{item.name}</strong><span>{item.growModifier.toFixed(2)}× crop</span></div><small>{item.playstyle}</small></button>)}</div></ConfigSelect><ConfigSelect index="04" title="Commitment" description="Long terms favor convenience and a modest bonus, not doubled daily output."><div className="duration-grid">{(Object.entries(DURATION_PRESETS) as [DurationKey, typeof DURATION_PRESETS[DurationKey]][]).map(([key, item]) => <button key={key} className={duration === key ? 'duration-option selected' : 'duration-option'} onClick={() => setDuration(key)}><strong>{key}</strong><span>{item.steps} steps</span><b>{item.maturityMultiplier.toFixed(2)}×</b></button>)}</div></ConfigSelect></div><aside className="panel review-panel"><p className="eyebrow">Position preview</p><h2>{strain.name}</h2><div className="growth-preview"><img src={growthProgression} alt="Four pixel-art growth stages from seedling to harvest" /><span>Four visible growth stages · settles by checkpoints</span></div><div className="review-strain"><span>{strain.playstyle}</span><strong>{strain.thc.toFixed(2)}% THC</strong><small>{strain.genetics}</small></div><label className="auto-water-toggle"><input type="checkbox" checked={autoWater} onChange={(event) => setAutoWater(event.target.checked)} /><span><strong>Auto-water reserve</strong><small>{autoWaterReserve(duration)} HC prepaid · unused reserve refunded</small></span></label><div className="review-lines"><div><span>Base / checkpoint</span><strong>{plot && nft ? formatNumber(gramsPerStep(nft, plot, strain.id)) : '—'}g</strong></div><div><span>Maturity estimate</span><strong className="positive">{plot && nft ? formatNumber(projectedMatureYield(nft, plot, strain.id, duration)) : '—'}g</strong></div><div><span>Open fee</span><strong>{PROTOCOL_FEE_ETH.toFixed(6)} ETH</strong></div></div><button className="button primary full large" disabled={!plot || !nft} onClick={() => plot && nft && openPosition(plot, nft, strain, duration, 'owner', autoWater)}><Sprout size={16} /> Review and plant</button></aside></section></>;
+  const strain = getNftStrain(nft?.tokenId ?? 0) ?? STRAINS[0];
+  return <><PageHeading eyebrow="Owner path · 100% share" title="Plant a 24/7 position." description="Choose an open simulated plot slot, a crop with a distinct production profile, and a restrained commitment bonus." />{(!plots.length || !nfts.length) && <div className="notice-line warning"><LockKeyhole size={17} /><div><strong>{!nfts.length ? 'No active available Access NFT.' : 'No open owned plot slots.'}</strong><span>Activate or release Access, or acquire additional functional capacity.</span></div></div>}<section className="configure-grid"><div className="panel config-panel"><ConfigSelect index="01" title="Plot slot" description="Capacity is enforced across first-class positions."><div className="selection-grid">{plots.map((item) => { const used = plotPositions(state, item.id).length; return <button key={item.id} className={plotId === item.id ? 'selected' : ''} onClick={() => setPlotId(item.id)}><strong>{PLOT_TIERS[item.tier].label} #{item.id}</strong><small>{used}/{PLOT_TIERS[item.tier].slots} occupied</small></button>; })}</div></ConfigSelect><ConfigSelect index="02" title="Farmer credential" description="Rarity and Farmer XP provide the displayed output multipliers."><div className="selection-grid">{nfts.map((item) => <button key={item.tokenId} className={nftId === item.tokenId ? 'selected' : ''} onClick={() => setNftId(item.tokenId)}><strong>#{item.tokenId} / {getNftStrain(item.tokenId)?.name}</strong><small>{item.rarity} · {RARITIES[item.rarity].multiplier.toFixed(2)}× · {formatNumber(item.xp, 0)} XP</small></button>)}</div></ConfigSelect><ConfigSelect index="03" title="NFT strain" description="Each of the 420 NFTs grows its assigned strain. Select another Access NFT to change crops."><div className="review-strain"><strong>{nft ? strain.name : 'Select an active NFT'}</strong><small>{nft ? strain.playstyle : 'Activate an Access NFT to plant.'}</small><small>Production and THC values are gameplay estimates.</small></div></ConfigSelect><ConfigSelect index="04" title="Commitment" description="Long terms favor convenience and a modest bonus, not doubled daily output."><div className="duration-grid">{(Object.entries(DURATION_PRESETS) as [DurationKey, typeof DURATION_PRESETS[DurationKey]][]).map(([key, item]) => <button key={key} className={duration === key ? 'duration-option selected' : 'duration-option'} onClick={() => setDuration(key)}><strong>{key}</strong><span>{item.steps} steps</span><b>{item.maturityMultiplier.toFixed(2)}×</b></button>)}</div></ConfigSelect></div><aside className="panel review-panel"><p className="eyebrow">Position preview</p><h2>{strain.name}</h2><div className="growth-preview"><img src={growthProgression} alt="Four pixel-art growth stages from seedling to harvest" /><span>Four visible growth stages · settles by checkpoints</span></div><div className="review-strain"><span>{strain.playstyle}</span><strong>{strain.thc.toFixed(2)}% THC (estimate)</strong><small>{strain.genetics}</small></div><label className="auto-water-toggle"><input type="checkbox" checked={autoWater} onChange={(event) => setAutoWater(event.target.checked)} /><span><strong>Auto-water reserve</strong><small>{autoWaterReserve(duration)} HC prepaid · unused reserve refunded</small></span></label><div className="review-lines"><div><span>Base / checkpoint</span><strong>{plot && nft ? formatNumber(gramsPerStep(nft, plot, strain.id)) : '—'}g</strong></div><div><span>Maturity estimate</span><strong className="positive">{plot && nft ? formatNumber(projectedMatureYield(nft, plot, strain.id, duration)) : '—'}g</strong></div><div><span>Open fee</span><strong>{PROTOCOL_FEE_ETH.toFixed(6)} ETH</strong></div></div><button className="button primary full large" disabled={!plot || !nft} onClick={() => plot && nft && openPosition(plot, nft, strain, duration, 'owner', autoWater)}><Sprout size={16} /> Review and plant</button></aside></section></>;
 }
 
 function ConfigSelect({ index, title, description, children }: { index: string; title: string; description: string; children: ReactNode }) {
@@ -731,12 +742,11 @@ function WorkView({ state, openPosition, go }: ViewContext) {
   const nfts = availableNfts(state);
   const [plotId, setPlotId] = useState(externalPlots[0].id);
   const [nftId, setNftId] = useState(nfts[0]?.tokenId ?? 0);
-  const [strainId, setStrainId] = useState(STRAINS[4].id);
   const [duration, setDuration] = useState<DurationKey>('24h');
   const plot = externalPlots.find((item) => item.id === plotId)!;
   const nft = nfts.find((item) => item.tokenId === nftId);
-  const strain = STRAINS.find((item) => item.id === strainId)!;
-  return <><PageHeading eyebrow="Landless path · worker-favoring split" title="Go to work." description="Use an open plot without buying land. The test split is 65% worker / 35% owner because the worker funds upkeep and simulated fees." /><OwnedLandOverview state={state} go={go} placement="work" /><div className="section-heading work-board-heading"><div><h2>Available work contracts</h2><p>Demo listings from other operators. Selecting one never consumes your owned land.</p></div><span className="count-chip">{externalPlots.length} listings</span></div><section className="work-grid"><div className="panel work-list">{externalPlots.map((item) => { const tier = PLOT_TIERS[item.tier]; const used = plotPositions(state, item.id).length; return <button key={item.id} className={plotId === item.id ? 'work-listing selected' : 'work-listing'} onClick={() => setPlotId(item.id)}><span className="work-land-thumb"><img src={LAND_ART[item.tier]} alt="" /></span><span><strong>{tier.label} #{item.id}</strong><small>{item.owner} · simulated listing</small></span><span><strong>{Math.max(0, tier.slots - used)} open</strong><small>{Math.round(WORKER_SHARE * 100)}% worker share</small></span></button>; })}</div><aside className="panel work-config"><p className="eyebrow">Work contract preview</p><h2>{PLOT_TIERS[plot.tier].label} #{plot.id}</h2><div className="work-selected-art"><img src={LAND_ART[plot.tier]} alt={`${PLOT_TIERS[plot.tier].label} operation`} /><span><strong>SIMULATED LISTING</strong><small>Select another operation to inspect its layout.</small></span></div><label>Access<select value={nftId} onChange={(event) => setNftId(Number(event.target.value))}>{nfts.map((item) => <option key={item.tokenId} value={item.tokenId}>#{item.tokenId} · {item.rarity}</option>)}</select></label><label>Strain<select value={strainId} onChange={(event) => setStrainId(event.target.value)}>{STRAINS.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.playstyle}</option>)}</select></label><label>Term<select value={duration} onChange={(event) => setDuration(event.target.value as DurationKey)}>{Object.entries(DURATION_PRESETS).map(([key, item]) => <option key={key} value={key}>{item.label} · {item.maturityMultiplier.toFixed(2)}×</option>)}</select></label><div className="work-estimate"><span>Estimated worker maturity</span><strong>{nft ? formatNumber(projectedMatureYield(nft, plot, strain.id, duration, 'worker')) : '—'}g</strong><small>Owner receives 35% in the non-spendable demo owner allocation; the worker receives 65% and funds upkeep.</small></div><button className="button primary full" disabled={!nft} onClick={() => nft && openPosition(plot, nft, strain, duration, 'worker', true)}><UserRoundCheck size={16} /> Review work contract</button></aside></section></>;
+  const strain = getNftStrain(nft?.tokenId ?? 0) ?? STRAINS[0];
+  return <><PageHeading eyebrow="Landless path · worker-favoring split" title="Go to work." description="Use an open plot without buying land. The test split is 65% worker / 35% owner because the worker funds upkeep and simulated fees." /><OwnedLandOverview state={state} go={go} placement="work" /><div className="section-heading work-board-heading"><div><h2>Available work contracts</h2><p>Demo listings from other operators. Selecting one never consumes your owned land.</p></div><span className="count-chip">{externalPlots.length} listings</span></div><section className="work-grid"><div className="panel work-list">{externalPlots.map((item) => { const tier = PLOT_TIERS[item.tier]; const used = plotPositions(state, item.id).length; return <button key={item.id} className={plotId === item.id ? 'work-listing selected' : 'work-listing'} onClick={() => setPlotId(item.id)}><span className="work-land-thumb"><img src={LAND_ART[item.tier]} alt="" /></span><span><strong>{tier.label} #{item.id}</strong><small>{item.owner} · simulated listing</small></span><span><strong>{Math.max(0, tier.slots - used)} open</strong><small>{Math.round(WORKER_SHARE * 100)}% worker share</small></span></button>; })}</div><aside className="panel work-config"><p className="eyebrow">Work contract preview</p><h2>{PLOT_TIERS[plot.tier].label} #{plot.id}</h2><div className="work-selected-art"><img src={LAND_ART[plot.tier]} alt={`${PLOT_TIERS[plot.tier].label} operation`} /><span><strong>SIMULATED LISTING</strong><small>Select another operation to inspect its layout.</small></span></div><label>Access<select value={nftId} onChange={(event) => setNftId(Number(event.target.value))}>{nfts.map((item) => <option key={item.tokenId} value={item.tokenId}>#{item.tokenId} / {getNftStrain(item.tokenId)?.name} / {item.rarity}</option>)}</select></label><div className="review-strain"><strong>{nft ? strain.name : 'Select an active NFT'}</strong><small>Assigned NFT strain / gameplay estimates</small></div><label>Term<select value={duration} onChange={(event) => setDuration(event.target.value as DurationKey)}>{Object.entries(DURATION_PRESETS).map(([key, item]) => <option key={key} value={key}>{item.label} · {item.maturityMultiplier.toFixed(2)}×</option>)}</select></label><div className="work-estimate"><span>Estimated worker maturity</span><strong>{nft ? formatNumber(projectedMatureYield(nft, plot, strain.id, duration, 'worker')) : '—'}g</strong><small>Owner receives 35% in the non-spendable demo owner allocation; the worker receives 65% and funds upkeep.</small></div><button className="button primary full" disabled={!nft} onClick={() => nft && openPosition(plot, nft, strain, duration, 'worker', true)}><UserRoundCheck size={16} /> Review work contract</button></aside></section></>;
 }
 
 function PositionView({ state, now, position, careForPosition, closePosition, go }: ViewContext & { position: Position }) {
@@ -746,7 +756,7 @@ function PositionView({ state, now, position, careForPosition, closePosition, go
   const metrics = getPositionMetrics(position, nft, plot, now);
   const growthStageIndex = metrics.mature ? 3 : metrics.progress >= .67 ? 2 : metrics.progress >= .34 ? 1 : 0;
   const growthStageLabel = ['Seedling', 'Vegetative', 'Flowering', 'Harvest-ready'][growthStageIndex];
-  return <><button className="back-link" onClick={() => go('/')}><ArrowRight size={15} /> Back to overview</button><PageHeading eyebrow={`${position.mode === 'worker' ? 'Work contract' : 'Owner grow'} · Plot #${plot.id}`} title={strain.name} description={`Access #${nft.tokenId} · ${DURATION_PRESETS[position.duration].label} · ${position.autoWater ? 'automatic care funded' : 'manual care selected'}`} action={<span className={`large-status ${metrics.mature ? 'ready' : 'growing'}`}><span />{metrics.mature ? 'Ready' : 'Growing'}</span>} /><section className="position-grid"><div className="panel position-main"><div className="position-progress-head"><div><span>24/7 CHECKPOINT PROGRESS</span><strong>Step {metrics.completedSteps} of {metrics.totalSteps}</strong></div><strong>{Math.round(metrics.progress * 100)}%</strong></div><div className="term-track"><span style={{ width: `${metrics.progress * 100}%` }} /></div><div className="position-growth-visual"><img src={growthProgression} alt="Four pixel-art crop growth stages" /><div className="growth-stage-zones" aria-hidden="true">{[0, 1, 2, 3].map((stage) => <span key={stage} className={stage === growthStageIndex ? 'active' : stage < growthStageIndex ? 'past' : ''} />)}</div><span className="growth-marker" style={{ left: `${Math.min(96, Math.max(4, metrics.progress * 100))}%` }}><i /></span><small>{growthStageLabel} stage · updates with elapsed time</small></div><div className="grow-spec"><div className="strain-monogram">{strain.name.split(' ').map((part) => part[0]).slice(0, 2).join('')}</div><div><span className="token-label">CURRENT CROP</span><h2>{strain.name}</h2><p>{strain.playstyle}</p></div><div className="potency-readout"><span>WORKER SHARE</span><strong>{position.mode === 'worker' ? Math.round(WORKER_SHARE * 100) + '%' : '100%'}</strong><small>Displayed before entry</small></div></div><div className="metric-quad"><MetricBox label="Player base" value={`${formatNumber(metrics.playerBase)}g`} sub="Completed checkpoints" /><MetricBox label="Completion payout" value={`${formatNumber(metrics.playerMatured)}g`} sub={`${DURATION_PRESETS[position.duration].maturityMultiplier.toFixed(2)}× restrained bonus`} accent /><MetricBox label="Access XP" value={`+${metrics.xpEarned}`} sub="Applies to next position" /><MetricBox label="Next checkpoint" value={metrics.mature ? 'Ready' : formatCountdown(metrics.nextStepAt - now)} sub="Lazy settlement; no cron needed" /></div></div><aside className="position-side"><div className="panel water-panel"><div className="panel-head compact-head"><div><p className="eyebrow">Upkeep</p><h2>{position.autoWater ? 'Auto-water funded' : 'Manual care'}</h2></div><Droplets size={19} /></div><div className="water-value"><strong>{Math.round(metrics.waterLevel)}%</strong><span>{position.autoWater ? `${position.autoWaterReserveHC} HC reserved` : 'Optional optimization'}</span></div><div className="water-track"><span style={{ width: `${metrics.waterLevel}%` }} /></div><button className="button secondary full" onClick={() => careForPosition(position)} disabled={position.autoWater || metrics.waterLevel >= 100 || state.hcBalance < 40}><Droplets size={16} /> Manual care · 40 HC</button></div><div className="panel slot-panel"><p className="eyebrow">Value conservation</p><h2>{position.mode === 'worker' ? '65 / 35 settlement' : 'Owner-operated'}</h2><p className="panel-copy">{position.mode === 'worker' ? `${formatNumber(metrics.ownerBase)}g is tracked separately for the plot owner. Worker output is no longer the only recorded side.` : 'The operator receives the full crop output while using owned capacity.'}</p></div></aside></section><section className="exit-panel panel"><div><p className="eyebrow">Position settlement</p><h2>{metrics.mature ? 'Harvest and release' : 'Need to leave early?'}</h2><p>{metrics.mature ? 'Completion bonus, Access XP, and unused water refund settle together.' : 'Early exit pays 80% of current player base. Previously harvested inventory is untouched.'}</p></div><button className={metrics.mature ? 'button primary' : 'button danger'} onClick={() => closePosition(position)} ><PackageOpen size={16} /> {metrics.mature ? 'Harvest position' : 'Review early exit'}</button></section></>;
+  return <><button className="back-link" onClick={() => go('/')}><ArrowRight size={15} /> Back to overview</button><PageHeading eyebrow={`${position.mode === 'worker' ? 'Work contract' : 'Owner grow'} · Plot #${plot.id}`} title={strain.name} description={`Access #${nft.tokenId} · ${DURATION_PRESETS[position.duration].label} · ${position.autoWater ? 'automatic care funded' : 'manual care selected'}`} action={<span className={`large-status ${metrics.mature ? 'ready' : 'growing'}`}><span />{metrics.mature ? 'Ready' : 'Growing'}</span>} /><section className="position-grid"><div className="panel position-main"><div className="position-progress-head"><div><span>24/7 CHECKPOINT PROGRESS</span><strong>Step {metrics.completedSteps} of {metrics.totalSteps}</strong></div><strong>{Math.round(metrics.progress * 100)}%</strong></div><div className="term-track"><span style={{ width: `${metrics.progress * 100}%` }} /></div><div className="position-growth-visual"><img src={growthProgression} alt="Four pixel-art crop growth stages" /><div className="growth-stage-zones" aria-hidden="true">{[0, 1, 2, 3].map((stage) => <span key={stage} className={stage === growthStageIndex ? 'active' : stage < growthStageIndex ? 'past' : ''} />)}</div><span className="growth-marker" style={{ left: `${Math.min(96, Math.max(4, metrics.progress * 100))}%` }}><i /></span><small>{growthStageLabel} stage · updates with elapsed time</small></div><div className="grow-spec"><div className="strain-monogram">{strain.name.split(' ').map((part) => part[0]).slice(0, 2).join('')}</div><div><span className="token-label">CURRENT CROP</span><h2>{strain.name}</h2><p>{strain.playstyle}</p></div><div className="potency-readout"><span>WORKER SHARE</span><strong>{position.mode === 'worker' ? Math.round(WORKER_SHARE * 100) + '%' : '100%'}</strong><small>Displayed before entry</small></div></div><div className="metric-quad"><MetricBox label="Player base" value={`${formatNumber(metrics.playerBase)}g`} sub="Completed checkpoints" /><MetricBox label="Completion payout" value={`${formatNumber(metrics.playerMatured)}g`} sub={`${DURATION_PRESETS[position.duration].maturityMultiplier.toFixed(2)}× restrained bonus`} accent /><MetricBox label="Farmer XP" value={`+${metrics.xpEarned}`} sub="Applies to next position" /><MetricBox label="Next checkpoint" value={metrics.mature ? 'Ready' : formatCountdown(metrics.nextStepAt - now)} sub="Lazy settlement; no cron needed" /></div></div><aside className="position-side"><div className="panel water-panel"><div className="panel-head compact-head"><div><p className="eyebrow">Upkeep</p><h2>{position.autoWater ? 'Auto-water funded' : 'Manual care'}</h2></div><Droplets size={19} /></div><div className="water-value"><strong>{Math.round(metrics.waterLevel)}%</strong><span>{position.autoWater ? `${position.autoWaterReserveHC} HC reserved` : 'Optional optimization'}</span></div><div className="water-track"><span style={{ width: `${metrics.waterLevel}%` }} /></div><button className="button secondary full" onClick={() => careForPosition(position)} disabled={position.autoWater || metrics.waterLevel >= 100 || state.hcBalance < 40}><Droplets size={16} /> Manual care · 40 HC</button></div><div className="panel slot-panel"><p className="eyebrow">Value conservation</p><h2>{position.mode === 'worker' ? '65 / 35 settlement' : 'Owner-operated'}</h2><p className="panel-copy">{position.mode === 'worker' ? `${formatNumber(metrics.ownerBase)}g is tracked separately for the plot owner. Worker output is no longer the only recorded side.` : 'The operator receives the full crop output while using owned capacity.'}</p></div></aside></section><section className="exit-panel panel"><div><p className="eyebrow">Position settlement</p><h2>{metrics.mature ? 'Harvest and release' : 'Need to leave early?'}</h2><p>{metrics.mature ? 'Completion bonus, Farmer XP, and unused water refund settle together.' : 'Early exit pays 80% of current player base. Previously harvested inventory is untouched.'}</p></div><button className={metrics.mature ? 'button primary' : 'button danger'} onClick={() => closePosition(position)} ><PackageOpen size={16} /> {metrics.mature ? 'Harvest position' : 'Review early exit'}</button></section></>;
 }
 
 function MetricBox({ label, value, sub, accent }: { label: string; value: string; sub: string; accent?: boolean }) {
@@ -754,9 +764,9 @@ function MetricBox({ label, value, sub, accent }: { label: string; value: string
 }
 
 function ContractsView({ state, now, fulfillOrder, go }: ViewContext) {
-  const orders = getDailyContracts(now);
+  const orders = getDailyContracts(now, state.nfts.filter((nft) => nft.activated).map((nft) => nft.tokenId));
   const refreshAt = Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate() + 1);
-  const tomorrow = getDailyContracts(refreshAt + 1_000);
+  const tomorrow = getDailyContracts(refreshAt + 1_000, state.nfts.filter((nft) => nft.activated).map((nft) => nft.tokenId));
   const remaining = orders.map((order) => Math.max(0, order.targetGrams - (state.orderFills[order.id] ?? 0)));
   const readyMatches = orders.filter((order, index) => remaining[index] > 0 && (state.grams[order.strainId] ?? 0) >= remaining[index]).length;
   const openGrams = remaining.reduce((sum, value) => sum + value, 0);
@@ -862,7 +872,7 @@ function CrewView({ state, now, contributeCrew, claimCrewReward }: ViewContext) 
 function AccessView({ state, activateNft, go }: { state: GameState; activateNft: (nft: AccessNft) => void; go: (path: string) => void }) {
   const activeCount = state.nfts.filter((nft) => nft.activated).length;
   return <>
-    <PageHeading eyebrow="420-token Genesis collection" title="Access seed vault." description="Every Access token maps one-to-one to a catalog identity and deterministic seed. Catalog traits are collectible cosmetics; the balanced 10-strain roster still controls gameplay." action={<div className="access-heading-actions"><button className="button secondary" onClick={() => go('/gallery')}>Browse gallery</button><button className="button primary" onClick={() => go('/mint')}><PackageOpen size={15} /> Mint demo</button></div>} />
+    <PageHeading eyebrow="420-token Genesis collection" title="Your farmer roster." description="Every Access token maps one-to-one to a strain specialty and pixel farmer. Each farmer grows their assigned strain specialty. Production values are simulation estimates; 93 identities are numbered phenotype variants." action={<div className="access-heading-actions"><button className="button secondary" onClick={() => go('/gallery')}>Browse gallery</button><button className="button primary" onClick={() => go('/mint')}><PackageOpen size={15} /> Mint demo</button></div>} />
     <section className="access-collection-strip panel">
       <div><span>Permanent Genesis cap</span><strong>{ACCESS_COLLECTION_SIZE}</strong></div>
       <div><span>Your credentials</span><strong>{state.nfts.length}</strong></div>
@@ -876,14 +886,14 @@ function AccessView({ state, activateNft, go }: { state: GameState; activateNft:
       return <article className="nft-card" key={nft.tokenId}>
         <div className="nft-visual" style={{ '--rarity': rarity.color } as CSSProperties}>
           <div className="nft-grid-lines" />
-          <AccessSeedArt tokenId={nft.tokenId} traits={identity} size={112} />
-          <span>GENESIS SEED · {identity.seed_pattern.toUpperCase()}</span>
+          <FarmerArt tokenId={nft.tokenId} traits={identity} size={112} xp={nft.xp} />
+          <span>GENESIS FARMER · {identity.seed_pattern.toUpperCase()}</span>
         </div>
         <div className="nft-body">
-          <div className="nft-heading"><div><span className="token-label">LOUD ACCESS #{nft.tokenId}</span><h3>{identity.name}</h3></div><span className="rarity-dot" style={{ color: rarity.color }}><i />{nft.rarity}</span></div>
-          <div className="nft-catalog-line"><span>{formatCatalogLabel(identity.family)}</span><span>{identity.type}</span><span>{identity.seed_texture}</span></div>
-          <div className="nft-stats"><div><span>Base rate</span><strong>{rarity.multiplier.toFixed(2)}×</strong></div><div><span>XP bonus</span><strong>{xpBonus(nft.xp).toFixed(2)}×</strong></div><div><span>Current XP</span><strong>{formatNumber(nft.xp, 0)}</strong></div></div>
-          <p className="nft-cosmetic-note">Catalog identity #{identity.id} · cosmetic lore only</p>
+          <div className="nft-heading"><div><span className="token-label">FARMER #{nft.tokenId}</span><h3>{identity.name}</h3></div><span className="rarity-dot" style={{ color: rarity.color }}><i />{nft.rarity}</span></div>
+          <div className="nft-catalog-line"><span>{formatCatalogLabel(identity.family)}</span><span>{identity.type}</span><span>Level {farmerLevel(nft.xp)}</span></div>
+          <div className="nft-stats"><div><span>Base rate</span><strong>{rarity.multiplier.toFixed(2)}×</strong></div><div><span>XP bonus</span><strong>{xpBonus(nft.xp).toFixed(2)}×</strong></div><div><span>Farmer XP</span><strong>{formatNumber(nft.xp, 0)}</strong></div></div>
+          <p className="nft-cosmetic-note">Farmer identity #{identity.id} · assigned growing strain</p>
           {nft.activated ? <button className="button activated" disabled><Check size={16} /> Functional access active</button> : <button className="button primary full" onClick={() => activateNft(nft)} disabled={state.hcBalance < ACTIVATION_COST}><LockKeyhole size={16} /> Activate · 4,200 HC</button>}
         </div>
       </article>;
@@ -901,11 +911,11 @@ function MintView({ state, go, mintAccess, lastMintedId }: { state: GameState; g
       <div className="panel mint-reveal-card" style={{ '--rarity': revealRarity?.color ?? '#72ef9d' } as CSSProperties}>
         <div className="mint-reveal-visual">
           <div className="nft-grid-lines" />
-          {reveal ? <AccessSeedArt tokenId={reveal.id} traits={reveal} size={176} /> : <span className="mint-mystery"><Hexagon size={78} /><strong>?</strong></span>}
-          <span>{reveal ? `REVEALED · ${reveal.seed_pattern.toUpperCase()}` : 'UNREVEALED GENESIS SEED'}</span>
+          {reveal ? <FarmerArt tokenId={reveal.id} traits={reveal} size={176} /> : <span className="mint-mystery"><Hexagon size={78} /><strong>?</strong></span>}
+          <span>{reveal ? `REVEALED · ${reveal.seed_pattern.toUpperCase()}` : 'UNREVEALED GENESIS FARMER'}</span>
         </div>
         <div className="mint-reveal-body">
-          {reveal ? <><span className="token-label">LOUD ACCESS #{reveal.id}</span><div className="mint-reveal-title"><h2>{reveal.name}</h2><span className="rarity-dot" style={{ color: revealRarity?.color }}><i />{reveal.rarity}</span></div><p>{formatCatalogLabel(reveal.family)} · {reveal.type} · {reveal.seed_texture} seed</p></> : <><span className="token-label">NEXT LOCAL REVEAL</span><h2>Identity hidden until confirmation</h2><p>The simulation selects one identity you do not already own.</p></>}
+          {reveal ? <><span className="token-label">FARMER #{reveal.id}</span><div className="mint-reveal-title"><h2>{reveal.name}</h2><span className="rarity-dot" style={{ color: revealRarity?.color }}><i />{reveal.rarity}</span></div><p>{formatCatalogLabel(reveal.family)} · {reveal.type} · {reveal.seed_texture} seed</p></> : <><span className="token-label">NEXT LOCAL REVEAL</span><h2>Identity hidden until confirmation</h2><p>The simulation selects one identity you do not already own.</p></>}
         </div>
       </div>
       <aside className="panel mint-console">
@@ -945,7 +955,7 @@ function GalleryView({ state, go }: { state: GameState; go: (path: string) => vo
   useEffect(() => setPage(1), [query, rarityFilter]);
 
   return <>
-    <PageHeading eyebrow="Complete Genesis registry" title="The 420 gallery." description="Browse every fixed identity, compare the disclosed rarity distribution, and inspect the pixel seed generated from each catalog record." action={<button className="button primary" onClick={() => go('/mint')}><PackageOpen size={15} /> Open mint demo</button>} />
+    <PageHeading eyebrow="Complete Genesis registry" title="The 420 gallery." description="Browse every fixed identity, compare the disclosed rarity distribution, and inspect the pixel farmer generated from each catalog record." action={<button className="button primary" onClick={() => go('/mint')}><PackageOpen size={15} /> Open mint demo</button>} />
     <RarityGuide />
     <section className="panel gallery-controls">
       <label><span>Search the registry</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Token #, name, family, or type" /></label>
@@ -953,14 +963,14 @@ function GalleryView({ state, go }: { state: GameState; go: (path: string) => vo
       <div className="gallery-result-count"><span>Registry results</span><strong>{filtered.length} / {ACCESS_COLLECTION_SIZE}</strong></div>
     </section>
     {selected && <section className="panel gallery-inspector" style={{ '--rarity': RARITIES[selected.rarity].color } as CSSProperties}>
-      <div className="gallery-inspector-art"><AccessSeedArt tokenId={selected.id} traits={selected} size={150} /></div>
-      <div><span className="token-label">SELECTED · LOUD ACCESS #{selected.id}</span><h2>{selected.name}</h2><p>{formatCatalogLabel(selected.family)} · {selected.type} · {selected.seed_shape} / {selected.seed_pattern} / {selected.seed_texture}</p><div className="nft-catalog-line"><span>{selected.rarity}</span><span>{RARITIES[selected.rarity].multiplier.toFixed(2)}× base</span><span>{accessRarityCount(selected.rarity)} in collection</span>{ownedIds.has(selected.id) && <span>Owned locally</span>}</div></div>
+      <div className="gallery-inspector-art"><FarmerArt tokenId={selected.id} traits={selected} size={150} /></div>
+      <div><span className="token-label">SELECTED · FARMER #{selected.id}</span><h2>{selected.name}</h2><p>{formatCatalogLabel(selected.family)} · {selected.type} · {selected.seed_shape} / {selected.seed_pattern} / {selected.seed_texture}</p><div className="nft-catalog-line"><span>{selected.rarity}</span><span>{RARITIES[selected.rarity].multiplier.toFixed(2)}× base</span><span>{accessRarityCount(selected.rarity)} in collection</span>{ownedIds.has(selected.id) && <span>Owned locally</span>}</div></div>
       <button className="dialog-close" onClick={() => setSelectedId(null)} aria-label="Close selected gallery item"><X size={17} /></button>
     </section>}
     <section className="gallery-grid">{visible.map((entry) => {
       const rarity = RARITIES[entry.rarity];
       return <button className={selectedId === entry.id ? 'gallery-card selected' : 'gallery-card'} key={entry.id} onClick={() => setSelectedId(entry.id)} style={{ '--rarity': rarity.color } as CSSProperties}>
-        <div className="gallery-seed"><AccessSeedArt tokenId={entry.id} traits={entry} size={72} />{ownedIds.has(entry.id) && <span className="gallery-owned"><Check size={11} /> OWNED</span>}</div>
+        <div className="gallery-seed"><FarmerArt tokenId={entry.id} traits={entry} size={72} />{ownedIds.has(entry.id) && <span className="gallery-owned"><Check size={11} /> OWNED</span>}</div>
         <div><span className="token-label">#{entry.id.toString().padStart(3, '0')}</span><strong>{entry.name}</strong><small style={{ color: rarity.color }}>{entry.rarity} · {rarity.multiplier.toFixed(2)}×</small></div>
       </button>;
     })}</section>
@@ -1005,7 +1015,9 @@ function compactVolume(value: number) {
 }
 
 function ConfirmationDialog({ details, close }: { details: ConfirmState; close: () => void }) {
-  return <div className="dialog-scrim" role="presentation" onMouseDown={(event) => event.currentTarget === event.target && close()}><div className="confirm-dialog" role="dialog" aria-modal="true" aria-label={details.title}><button className="dialog-close" onClick={close} aria-label="Close"><X size={19} /></button><span className="dialog-icon"><ShieldCheck size={22} /></span><p className="eyebrow">{details.eyebrow}</p><h2>{details.title}</h2><p>{details.body}</p><div className="confirm-lines">{details.lines.map((line) => <div key={line.label}><span>{line.label}</span><strong className={line.tone}>{line.value}</strong></div>)}</div><div className="simulated-callout"><span className="status-dot" /><div><strong>Simulation only</strong><small>No real tokens, securities, or funds move.</small></div></div><button className="button primary full large" onClick={details.onConfirm}>{details.confirmLabel} <ArrowRight size={16} /></button><button className="button ghost full" onClick={close}>Cancel</button></div></div>;
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef, true, close);
+  return <div className="dialog-scrim" role="presentation" onMouseDown={(event) => event.currentTarget === event.target && close()}><div ref={dialogRef} className="confirm-dialog" role="dialog" aria-modal="true" aria-label={details.title}><button className="dialog-close" onClick={close} aria-label="Close"><X size={19} /></button><span className="dialog-icon"><ShieldCheck size={22} /></span><p className="eyebrow">{details.eyebrow}</p><h2>{details.title}</h2><p>{details.body}</p><div className="confirm-lines">{details.lines.map((line) => <div key={line.label}><span>{line.label}</span><strong className={line.tone}>{line.value}</strong></div>)}</div><div className="simulated-callout"><span className="status-dot" /><div><strong>Simulation only</strong><small>No real tokens, securities, or funds move.</small></div></div><button className="button primary full large" onClick={details.onConfirm}>{details.confirmLabel} <ArrowRight size={16} /></button><button className="button ghost full" onClick={close}>Cancel</button></div></div>;
 }
 
 function Toast({ toast, close }: { toast: ToastState; close: () => void }) {

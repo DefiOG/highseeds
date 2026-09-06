@@ -13,6 +13,7 @@ export interface AccessNft {
 
 export interface Position {
   id: string;
+  slotIndex?: number;
   plotId: number;
   nftId: number;
   strainId: string;
@@ -59,6 +60,10 @@ export interface CrewOperationState {
 }
 
 export interface GameState {
+  autoHarvest?: boolean;
+  farmerAvatarId?: number;
+  lifetimeHarvestHC?: number;
+  farmMilestones?: { planted?: boolean; harvested?: boolean; delivered?: boolean; expanded?: boolean };
   walletConnected: boolean;
   address: string;
   ethBalance: number;

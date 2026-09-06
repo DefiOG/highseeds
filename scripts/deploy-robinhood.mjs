@@ -34,10 +34,7 @@ const artifactRoot = path.join(process.cwd(), 'contracts', 'artifacts');
 const accessCatalogManifest = JSON.parse(
   fs.readFileSync(path.join(process.cwd(), 'src', 'data', 'catalog_manifest.json'), 'utf8'),
 );
-const strainIds = [
-  'bruce-banner-3', 'strawberry-cough', 'og-kush', 'super-lemon-haze', 'durban-poison',
-  'sour-diesel', 'northern-lights-5', 'granddaddy-purple', 'super-silver-haze', 'blueberry',
-].map(id);
+const strainIds = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'src/data/catalog_420_v2.json'), 'utf8')).map((entry) => id(entry.slug));
 
 function artifact(name) {
   return JSON.parse(fs.readFileSync(path.join(artifactRoot, `${name}.json`), 'utf8'));
@@ -74,6 +71,8 @@ if (deployedAccessMaxSupply !== accessCatalogManifest.total_strains) {
 const plotContract = plot.contract.connect(wallet);
 const binding = await plotContract.setPositionManager(positions.address);
 const bindingReceipt = await binding.wait();
+const accessBinding = await access.contract.setPositionManager(positions.address);
+const accessBindingReceipt = await accessBinding.wait();
 
 const manifest = {
   chainId,
@@ -83,7 +82,8 @@ const manifest = {
   admin,
   protocolFeeWei: '1000000000000',
   checkpointSeconds: 21600,
-  configVersion: 2,
+  configVersion: 3,
+  rewards: { xpPerCheckpoint: 50, hcPerCheckpoint: 25, maxFarmerLevel: 50, maturityOnly: true, transferable: false },
   workerShareBps: 6500,
   plotOwnerShareBps: 3500,
   accessGenesis: {
@@ -97,6 +97,7 @@ const manifest = {
     LoudPlot: { address: plot.address, transactionHash: plot.transactionHash, gasUsed: plot.gasUsed },
     LoudPositions: { address: positions.address, transactionHash: positions.transactionHash, gasUsed: positions.gasUsed },
   },
+  farmerManagerBinding: { transactionHash: accessBinding.hash, gasUsed: accessBindingReceipt.gasUsed.toString() },
   positionManagerBinding: { transactionHash: binding.hash, gasUsed: bindingReceipt.gasUsed.toString() },
 };
 
