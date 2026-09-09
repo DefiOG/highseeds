@@ -1,3 +1,5 @@
+import { FieldGuide } from './components/FieldGuide';
+import { Whitelist } from './components/Whitelist';
 import { farmerLevel, maturityReward } from './data/farmerProgression';
 import { useDialogFocus } from './lib/useDialogFocus';
 import { harvestPosition, plantPosition, settleMatureCrops } from './lib/farmActions';
@@ -605,6 +607,9 @@ export default function App() {
   else if (path === '/land') page = <LandView {...context} />;
   else if (path === '/market-lab') page = <MarketLabView now={now} />;
   else page = <Dashboard {...context} />;
+
+  if (path === '/docs') return <FieldGuide go={go} />;
+  if (path === '/whitelist') return <Whitelist go={go} />;
 
   if (!(import.meta.env.DEV && new URLSearchParams(window.location.search).get('developer') === '1')) return <div className="farm-shell"><FarmWorld {...context} route={path} connectWallet={connectWallet} blocked={Boolean(confirm)} />{confirm && <ConfirmationDialog details={confirm} close={() => setConfirm(null)} />}{toast && <Toast toast={toast} close={() => setToast(null)} />}</div>;
 

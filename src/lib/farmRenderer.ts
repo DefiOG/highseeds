@@ -11,15 +11,12 @@ function oval(c: Ctx, x: number, y: number, rx: number, ry: number, color: strin
   c.fillStyle = color; c.beginPath(); c.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); c.fill();
 }
 
-function tree(c: Ctx, x: number, y: number, size = 1, tint = 0) {
-  c.save(); c.translate(Math.round(x), Math.round(y)); c.scale(size, size);
-  oval(c, 9, 3, 25, 10, '#263e2760');
-  rect(c, -5, -34, 12, 37, '#624832'); rect(c, -1, -28, 5, 29, '#927047');
-  const colors = tint ? ['#344f35', '#476637', '#648342', '#7d944c'] : ['#244d38', '#38643d', '#537e45', '#73924c'];
-  [[0, -43, 28], [-13, -62, 24], [14, -66, 26], [0, -82, 21]].forEach(([a,b,r],i) => {
-    oval(c, a, b + 5, r, r * .82, colors[0]); oval(c, a - 2, b, r - 3, r * .75, colors[i % 3 + 1]);
-    rect(c, a - 9, b - 10, 9, 4, '#92a85b80');
-  });
+// Decorative cannabis stays on the perimeter, outside the walkable farm.
+function borderPlant(c: Ctx, x: number, y: number, size = 1) {
+  c.save(); c.translate(x, y);
+  oval(c, 0, 2, 14 * size, 4 * size, '#263e2738');
+  c.scale(size, size);
+  plant(c, 0, 0, .85, '#91a65a');
   c.restore();
 }
 
@@ -94,6 +91,13 @@ export function createFarmBackground(): HTMLCanvasElement {
   for(let i=0;i<20;i++){const a=i/20*Math.PI*2;oval(c,165+Math.cos(a)*84,484+Math.sin(a)*56,5+rng()*5,4,'#a7ab83');}
   for (const [x,y] of [[99,514],[234,469],[116,436]]) { for(let i=0;i<5;i++)rect(c,x+i*3,y-15-rng()*8,2,24,'#527443'); }
   rect(c,201,497,68,20,'#826747');for(let x=204;x<265;x+=9)rect(c,x,499,6,16,'#b59a65');rect(c,206,490,4,10,'#6c563c');rect(c,254,490,4,10,'#6c563c');
+  // Rear border is rendered before architecture: foliage cannot paint over roofs.
+  // Plant silhouettes stay within the non-walkable edges; entrances remain clear.
+  for (let i = 0; i < 19; i++) borderPlant(c, 28 + i * 50, 48, 1 + (i % 3) * .12);
+  for (let i = 0; i < 9; i++) {
+    borderPlant(c, 23, 120 + i * 54, 1.1);
+    borderPlant(c, 937, 120 + i * 54, 1.1);
+  }
   house(c);greenhouse(c);market(c);
   // Well, garden bench, stepping stones, crates, signs and flower patches.
   oval(c,581,161,25,13,'#50634950');rect(c,560,144,42,25,'#aaa886');rect(c,564,149,34,8,'#506456');rect(c,559,125,4,30,'#856445');rect(c,599,125,4,30,'#856445');rect(c,552,119,59,8,'#a76c48');rect(c,560,111,42,8,'#b98756');
@@ -102,9 +106,6 @@ export function createFarmBackground(): HTMLCanvasElement {
   rect(c,95,329,64,7,'#aa8651');rect(c,97,317,60,6,'#bb995f');rect(c,99,329,5,15,'#765c3e');rect(c,150,329,5,15,'#765c3e');
   for(let i=0;i<120;i++){const x=52+rng()*850,y=70+rng()*530;if((x>267&&x<837&&y>216&&y<579)||(x<260&&y>100&&y<550)||(x>645&&y<220))continue;rect(c,x,y,2,7,'#547743');rect(c,x-2,y-2,6,4,['#eee1a3','#ce956e','#d9c18d'][i%3]);}
   fence(c,63,591,189);fence(c,543,596,337);
-  for(let i=0;i<19;i++){tree(c,18+i*54,72+(i%3)*9,.8+(i%4)*.08,i%2);}
-  for(let i=0;i<8;i++){tree(c,25+(i%2)*8,168+i*62,.78,i%2);tree(c,933+(i%2)*9,165+i*67,.95,i%2);}
-  for(const [x,y,s] of [[68,294,.7],[852,314,.85],[875,398,.7],[302,137,.65],[618,586,.6],[45,625,1],[911,640,1.1]])tree(c,x,y,s);
   return canvas;
 }
 

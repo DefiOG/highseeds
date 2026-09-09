@@ -16,13 +16,25 @@ export function drawFarmerSprite(c: CanvasRenderingContext2D, x: number, y: numb
   r(-7,-20,15,14,art.shirt);r(-9,-18,3,10,art.skin);r(8,-18,3,10,art.skin);
   if(art.overalls){r(-4,-17,9,11,'#526c68');r(-4,-20,2,6,'#526c68');r(3,-20,2,6,'#526c68');r(-2,-15,5,4,'#758981');}
   else{r(-6,-9,13,2,'#6b5b45');r(-1,-18,2,9,'#dfc79a');}
-  r(-6,-30,13,12,art.skin);r(-7,-31,15,5,'#634c37');
-  if (facing === 'back') {
-    r(-6,-27,13,7,'#634c37');
+  // All facial features share the head's fixed pixel grid, independent of gait.
+  // Mirror pixel rectangles around the sprite center (x + 0.5), not their origins.
+  if (facing === 'left' || facing === 'right') {
+    const profile = (a:number,b:number,w:number,h:number,color:string) =>
+      r(facing === 'left' ? 1-a-w : a,b,w,h,color);
+    profile(-5,-30,11,12,art.skin);
+    profile(-6,-31,13,5,'#634c37');
+    profile(-5,-26,4,6,'#634c37');
+    profile(-2,-24,2,3,art.skin); // Ear, behind the visible eye.
+    profile(3,-25,2,2,'#343c32');
+    profile(6,-23,2,3,art.skin); // Nose establishes the facing direction.
+    profile(3,-20,3,1,'#9b674d');
   } else {
-    if (facing !== 'right') r(-4,-25,2,2,'#343c32');
-    if (facing !== 'left') r(3,-25,2,2,'#343c32');
-    r(-2,-21,4,1,'#9b674d');
+    r(-6,-30,13,12,art.skin);r(-7,-31,15,5,'#634c37');
+    if (facing === 'back') r(-6,-27,13,9,'#634c37');
+    else {
+      r(-4,-25,2,2,'#343c32');r(3,-25,2,2,'#343c32');
+      r(-1,-21,3,1,'#9b674d');
+    }
   }
   r(-12,-33,25,5,art.hat);r(-8,-39,17,7,art.hat);r(-8,-34,17,3,'#705b41');r(-6,-38,11,2,'#f4e4b15c');
   if(level>=5){r(7,-37,2,7,'#496e46');r(8,-38,4,4,'#8ca562');}
