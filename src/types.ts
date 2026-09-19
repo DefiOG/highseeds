@@ -3,6 +3,23 @@ export type PlotTierKey = 'pot' | 'closet' | 'room' | 'house' | 'farm' | 'mega';
 export type DurationKey = '6h' | '12h' | '24h' | '3d' | '7d';
 export type CustomerKey = 'street' | 'regular' | 'wholesaler' | 'kingpin';
 export type PositionMode = 'owner' | 'worker';
+export type PlantTraining = 'natural' | 'wide' | 'tall';
+
+export interface PlantRecord {
+  id: string;
+  nftId: number;
+  strainId: string;
+  cycle: number;
+  startedAt: number;
+  harvestedAt: number;
+  outcome: 'harvested' | 'early' | 'failed';
+  grams: number;
+  progress: number;
+  water: number;
+  damage: number;
+  training: PlantTraining;
+  rendererVersion: 1;
+}
 
 export interface AccessNft {
   tokenId: number;
@@ -12,6 +29,8 @@ export interface AccessNft {
 }
 
 export interface Position {
+  training?: PlantTraining;
+  trainedAt?: number;
   id: string;
   slotIndex?: number;
   plotId: number;
@@ -60,6 +79,7 @@ export interface CrewOperationState {
 }
 
 export interface GameState {
+  plantHistory?: PlantRecord[];
   autoHarvest?: boolean;
   farmerAvatarId?: number;
   lifetimeHarvestHC?: number;

@@ -88,7 +88,7 @@ The 10 playable strains use the project’s High Times source roster. The separa
 The home screen is now a walkable pixel-art homestead. Use WASD/arrow keys or click the ground; E interacts nearby. Building labels walk to a destination, while the toolbar opens the same panels directly. Touch arrows support mobile play.
 
 - Plant an active NFT in a specific bed. Each NFT grows its catalog strain, one crop at a time.
-- Choose manual care or funded irrigation, watch four growth stages, and harvest into the shared inventory.
+- Choose manual care or funded irrigation, watch continuous growth through thirteen visual milestones, and harvest into the shared inventory.
 - The market requests active collection strains with finite daily caps; deliver available inventory for local HC.
 - Search all 420 farmers in the lodge, recruit local demo farmers, and activate owned farmers.
 - Buy capacity at the land office. Additional beds appear across pages of 12, preserving existing crop locations.
@@ -117,3 +117,19 @@ Minting is outside this app's current scope. The user plans to manage the collec
 
 ### Crop neglect (local game)
 Manual crops become thirsty below 50% water, wilt at zero water (24 production hours), and fail after 48 hours since the last care while still growing. Watering before failure rescues them; later watering cannot erase historical failure. Irrigation prevents failure. Mature crops do not spoil. Failed crops yield zero inventory, XP, maturity HC, reputation or season XP; clearing releases the farmer with existing XP intact. Automatic collection also clears failed crops. The six-second playtest uses the same rules on a compressed clock. These neglect mechanics are local gameplay and are not implemented in the prepared on-chain contracts yet.
+
+
+## Living plant portraits
+
+The farm beds and plant detail views share a deterministic procedural renderer (`src/lib/plantGrowth.ts`). Seed identity controls stable branch proportions and flower color. Elapsed time unfolds roots, leaves, branches and flower clusters between thirteen named milestones. Current water condition affects leaf posture and color; failed crops use a dry appearance. These are game visuals, not cultivation guidance.
+
+The late-flower milestone starts at 112% of the selected term and is cosmetic. Turn off automatic collection in the farm journal to keep a mature plant visible. Settlement, yield, failure rules and existing saved data are unchanged. Harvest still releases the collectible for explicit replanting through the existing planting flow.
+
+This implementation is local presentation, not onchain NFT metadata. The seed NFT contract migration is not implemented here.
+
+
+### Seed cycle history and care
+
+The farm journal saves each new completed, early-harvested or failed cycle with its seed identity, cycle number, final appearance inputs and actual game-inventory payout. Records survive local reloads and replanting; crops harvested before this feature cannot be reconstructed. The journal offers an explicit next-cycle planting flow for available seeds and empty beds. History remains browser-local and is removed by clearing/resetting the save.
+
+Players can select natural, wide or tall structure once per cycle before 52% growth. These choices are free and cosmetic; existing water/yield rules remain unchanged. Missed care leaves marks on older foliage even after watering restores current posture. The farm and saved portraits use the same appearance inputs. Saved records carry renderer version 1; future rendering migrations must preserve version-1 interpretation if historical appearance compatibility is required.

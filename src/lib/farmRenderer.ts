@@ -1,7 +1,9 @@
+import type { PlantTraining } from '../types';
+import { plantMarks } from './plantGrowth';
 import { drawFarmerSprite } from './farmerArt';
 import { bedPoint, WORLD_HEIGHT, WORLD_WIDTH, type Point } from './farmWorld';
 
-export interface CropVisual { failed?: boolean; progress: number; water: number; color: string; occupied: boolean; available: boolean }
+export interface CropVisual { training?: PlantTraining; damage?: number; seed?: number; failed?: boolean; progress: number; water: number; color: string; occupied: boolean; available: boolean }
 export interface SceneFrame { farmerId: number; farmerLevel: number; player: Point; facing: Point; walking: boolean; time: number; crops: CropVisual[]; selected: number; destination?: Point }
 type Ctx = CanvasRenderingContext2D;
 const rect = (c: Ctx, x: number, y: number, w: number, h: number, color: string) => { c.fillStyle = color; c.fillRect(Math.round(x), Math.round(y), w, h); };
@@ -109,34 +111,23 @@ export function createFarmBackground(): HTMLCanvasElement {
   return canvas;
 }
 
-function plant(c:Ctx,x:number,y:number,progress:number,color:string) {
-  const height=progress<.2?10:progress<.6?23:34;
-  rect(c,x-1,y-height,2,height,'#849952');
-  // Tapered, seven-finger fan leaves grow directly from the soil, without pots.
-  const fan=(cx:number,cy:number,scale:number) => {
-    for(let finger=-3;finger<=3;finger++) {
-      const angle=finger*.39;
-      const length=(9-Math.abs(finger)*1.5)*scale;
-      for(let t=0;t<length;t++) {
-        const width=t>length*.75?1:2;
-        rect(c,cx+Math.sin(angle)*t-width/2,cy-Math.cos(angle)*t,width,2,t%3===0?'#88aa59':'#487741');
-      }
-    }
-  };
-  if(progress<.2) { fan(x,y-3,.65); return; }
-  for(let tier=0;tier<3;tier++) {
-    const cy=y-5-tier*7, spread=7-tier*2;
-    rect(c,x-spread,cy,spread*2,1,'#849952');
-    fan(x-spread,cy,1-tier*.13);fan(x+spread,cy,1-tier*.13);
+// Reuse paths between state updates; the scene itself redraws every animation frame.
+const plantPaths = new Map<string, { mark: ReturnType<typeof plantMarks>[number]; path: Path2D }[]>();
+function plant(c:Ctx,x:number,y:number,progress:number,color:string,seed=1,water=100,failed=false,training:PlantTraining='natural',damage=0) {
+  const key = `${seed}:${progress}:${water}:${failed}:${color}:${training}:${damage}`;
+  let paths = plantPaths.get(key);
+  if (!paths) {
+    paths = plantMarks({progress,color,seed,water,failed,training,damage}).map(mark => ({mark,path:new Path2D(mark.d)}));
+    if (plantPaths.size >= 64) plantPaths.delete(plantPaths.keys().next().value!);
+    plantPaths.set(key,paths);
   }
-  fan(x,y-height+7,.8);
-  if(progress>=.6) {
-    for(const [dx,dy] of [[0,-height],[-5,-17],[5,-23],[0,-12]]) {
-      rect(c,x+dx-2,y+dy,5,8,'#6f8946');
-      rect(c,x+dx-1,y+dy-2,3,10,progress>=1?'#b1ab63':color);
-      rect(c,x+dx,y+dy,1,2,'#e1c385');rect(c,x+dx-1,y+dy+5,2,1,'#d9b474');
-    }
+  c.save(); c.translate(x,y); c.scale(.29,.29); c.translate(-80,-145);
+  for (const {mark,path} of paths) {
+    c.globalAlpha = mark.opacity ?? 1;
+    if(mark.fill !== 'none') { c.fillStyle=mark.fill;c.fill(path); }
+    if(mark.stroke) { c.strokeStyle=mark.stroke;c.lineWidth=mark.width??1;c.lineCap='round';c.stroke(path); }
   }
+  c.restore();
 }
 
 export function drawFarm(c:Ctx,background:HTMLCanvasElement,frame:SceneFrame) {
@@ -152,11 +143,8 @@ export function drawFarm(c:Ctx,background:HTMLCanvasElement,frame:SceneFrame) {
     if(frame.selected===index){c.strokeStyle='#ffe0a0';c.lineWidth=2;c.strokeRect(p.x-4,p.y-4,64,51);}
     if(crop.occupied){
       if(crop.water>=50)rect(c,p.x+1,p.y+1,54,41,'#332a2826');
-      for(let j=0;j<3;j++) {
-        const x=p.x+11+j*17,y=p.y+34-(j%2)*5;
-        if(crop.failed) { rect(c,x,y-12,2,12,'#826143');rect(c,x-5,y-9,7,2,'#a18b60');rect(c,x+2,y-6,5,2,'#a18b60'); }
-        else { c.save(); if(crop.water===0) { c.translate(x,y);c.scale(1,.7);c.translate(-x,-y); } plant(c,x,y,crop.progress,crop.water===0?'#b39a65':crop.color);c.restore(); }
-      }
+      // One collectible, one plant. Its silhouette matches the detailed portrait.
+      plant(c,p.x+28,p.y+32,crop.progress,crop.color,crop.seed??1,crop.water,crop.failed,crop.training,crop.damage);
       if(crop.progress>=1&&!crop.failed){rect(c,p.x+22,p.y-19,14,10,'#f5d787');c.fillStyle='#4d653b';c.font='bold 9px monospace';c.textAlign='center';c.fillText('!',p.x+29,p.y-11);}
       else if(crop.water<50){rect(c,p.x+23,p.y-15,9,9,'#86cbd1');}
     } else {rect(c,p.x+25,p.y+16,6,2,'#b49a73');rect(c,p.x+27,p.y+14,2,6,'#b49a73');}

@@ -1,5 +1,6 @@
 import { DURATION_PRESETS, nftCanPlantStrain, PLOT_TIERS, PROTOCOL_FEE_ETH, STRAINS, WATER_COST_PER_STEP } from '../data/economy';
-import type { GameState, Plot, Position } from '../types';
+import type { GameState, Plot, Position, PlantTraining, PlantRecord } from '../types';
+import { plantDamage, visualGrowth } from './plantGrowth';
 import { autoWaterReserve, formatNumber, getPositionMetrics } from './engine';
 import { farmSlots } from './farmWorld';
 import { maturityReward, MAX_FARMER_XP } from '../data/farmerProgression';
@@ -45,8 +46,19 @@ export function harvestPosition(state: GameState, positionId: string, now: numbe
   const ownerPayout = metrics.mature ? metrics.ownerMatured : metrics.ownerBase;
   const usedWater = position.autoWater ? metrics.completedSteps * WATER_COST_PER_STEP : 0;
   const refund = Math.max(0, position.autoWaterReserveHC - usedWater);
+  const history = state.plantHistory ?? [];
+  const record: PlantRecord = {
+    id: position.id, nftId: position.nftId, strainId: position.strainId,
+    cycle: history.filter(item => item.nftId === position.nftId).length + 1,
+    startedAt: position.startedAt, harvestedAt: now,
+    outcome: metrics.failed ? 'failed' : metrics.mature ? 'harvested' : 'early',
+    grams: payout, progress: visualGrowth(position.startedAt, metrics.endsAt, now, metrics.failed, metrics.progress),
+    water: metrics.waterLevel, damage: plantDamage(position, now),
+    training: position.training ?? 'natural', rendererVersion: 1,
+  };
   return {
     ...state,
+    plantHistory: [record, ...history],
     ethBalance: state.ethBalance - fee,
     hcBalance: state.hcBalance + refund + reward.hc,
     lifetimeHarvestHC: (state.lifetimeHarvestHC ?? 0) + reward.hc,
@@ -58,6 +70,23 @@ export function harvestPosition(state: GameState, positionId: string, now: numbe
     positions: state.positions.filter((item) => item.id !== position.id),
     farmMilestones: { ...state.farmMilestones, harvested: state.farmMilestones?.harvested || (metrics.mature && !metrics.failed) },
     activity: [{ id: `harvest-${position.id}`, at: now, title: metrics.failed ? 'Failed crop cleared' : metrics.mature ? `${formatNumber(payout)}g harvested${automatic ? ' automatically' : ''}` : `${formatNumber(payout)}g early settlement`, detail: `Farmer #${nft.tokenId} · ${strain.name} · +${reward.xp} XP · +${reward.hc} HC${ownerPayout ? ` · ${formatNumber(ownerPayout)}g demo owner allocation` : ''}.`, kind: 'success' }, ...state.activity].slice(0, 30) as GameState['activity'],
+  };
+}
+
+/** One structural choice per cycle, before canopy filling. Revalidate at click time. */
+export function trainPosition(state: GameState, positionId: string, training: PlantTraining, now: number): GameState {
+  if (!state.walletConnected || !['natural', 'wide', 'tall'].includes(training)) return state;
+  const position = state.positions.find(item => item.id === positionId);
+  if (!position || position.trainedAt !== undefined) return state;
+  const nft = state.nfts.find(item => item.tokenId === position.nftId);
+  const plot = state.plots.find(item => item.id === position.plotId);
+  if (!nft || !plot) return state;
+  const metrics = getPositionMetrics(position, nft, plot, now);
+  if (metrics.failed || metrics.mature || metrics.progress >= .52) return state;
+  return {
+    ...state,
+    positions: state.positions.map(item => item.id === positionId ? { ...item, training, trainedAt: now } : item),
+    activity: [{ id: `train-${positionId}`, at: now, title: 'Plant shape selected', detail: `Seed #${position.nftId}: ${training} canopy for this cycle. Cosmetic choice; no yield bonus.`, kind: 'info' }, ...state.activity].slice(0, 30) as GameState['activity'],
   };
 }
 

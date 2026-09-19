@@ -5,7 +5,8 @@ import { getNftStrain, PROTOCOL_FEE_ETH } from '../data/economy';
 import { createCrewOperationState } from '../data/crew';
 import type { GameState, Position } from '../types';
 import { LOCK_STEP_MS } from './clock';
-import { harvestPosition, plantPosition, settleMatureCrops } from './farmActions';
+import { harvestPosition, plantPosition, settleMatureCrops, trainPosition } from './farmActions';
+import { plantDamage, plantMarks } from './plantGrowth';
 import { farmSlots } from './farmWorld';
 
 function initial(): GameState {
@@ -104,5 +105,53 @@ describe('neglected crop lifecycle', () => {
     const s = initial();
     expect(getPositionMetrics({...manual(),autoWater:true},s.nfts[0],s.plots[0],30*LOCK_STEP_MS).failed).toBe(false);
     expect(getPositionMetrics({...manual(),duration:'24h'},s.nfts[0],s.plots[0],30*LOCK_STEP_MS).failed).toBe(false);
+  });
+});
+
+describe('seed cycle history and training', () => {
+  it('keeps the finished appearance after reload and explicit replanting', () => {
+    const state = initial();
+    const planted = plantPosition(state, crop(), state.plots[0]);
+    const trained = trainPosition(planted, 'crop-1', 'wide', 0);
+    const finished = harvestPosition(trained, 'crop-1', 4 * LOCK_STEP_MS);
+    expect(finished.plantHistory).toHaveLength(1);
+    const record = finished.plantHistory![0];
+    expect(record).toMatchObject({ nftId: 1, cycle: 1, outcome: 'harvested', training: 'wide', progress: 1, water: 100, rendererVersion: 1 });
+    const portrait = plantMarks({ ...record, seed: record.nftId });
+    const restored = JSON.parse(JSON.stringify(finished)) as GameState;
+    const next = plantPosition(restored, { ...crop(), id: 'second-cycle', startedAt: 5 * LOCK_STEP_MS }, state.plots[0]);
+    expect(next.positions[0].training).toBeUndefined();
+    expect(plantMarks({ ...next.plantHistory![0], seed: record.nftId })).toEqual(portrait);
+    const second = harvestPosition(next, 'second-cycle', 9 * LOCK_STEP_MS);
+    expect(second.plantHistory!.map(item => item.cycle)).toEqual([2, 1]);
+    expect(harvestPosition(second, 'second-cycle', 10 * LOCK_STEP_MS)).toBe(second);
+  });
+  it('archives early, failed and automatic outcomes without duplicating records', () => {
+    const state = initial();
+    const planted = plantPosition(state, crop(), state.plots[0]);
+    expect(harvestPosition(planted, 'crop-1', LOCK_STEP_MS).plantHistory![0].outcome).toBe('early');
+    const auto = settleMatureCrops(planted, 4 * LOCK_STEP_MS);
+    expect(auto.plantHistory![0].outcome).toBe('harvested');
+    expect(settleMatureCrops(auto, 5 * LOCK_STEP_MS).plantHistory).toHaveLength(1);
+    const neglected = { ...state, positions: [{ ...crop(), duration: '3d' as const, autoWater: false, autoWaterReserveHC: 0 }] };
+    expect(settleMatureCrops(neglected, 8 * LOCK_STEP_MS).plantHistory![0]).toMatchObject({ outcome: 'failed', grams: 0, damage: 1 });
+  });
+  it('locks training once, rejects stale actions and leaves payouts unchanged', () => {
+    const state = initial();
+    const planted = plantPosition(state, crop(), state.plots[0]);
+    const trained = trainPosition(planted, 'crop-1', 'tall', 0);
+    expect(trainPosition(trained, 'crop-1', 'wide', 1)).toBe(trained);
+    expect(trainPosition(planted, 'crop-1', 'wide', 4 * LOCK_STEP_MS * .52)).toBe(planted);
+    expect(trainPosition(planted, 'missing', 'wide', 0)).toBe(planted);
+    expect(harvestPosition(trained, 'crop-1', 4 * LOCK_STEP_MS).grams).toEqual(harvestPosition(planted, 'crop-1', 4 * LOCK_STEP_MS).grams);
+    expect(plantMarks({ seed: 1, progress: .8, training: 'wide' })).not.toEqual(plantMarks({ seed: 1, progress: .8, training: 'tall' }));
+  });
+  it('retains old foliage damage after rescue while irrigation prevents it', () => {
+    const manual = { ...crop(), duration: '3d' as const, autoWater: false };
+    expect(plantDamage(manual, 3 * LOCK_STEP_MS)).toBe(0);
+    const damage = plantDamage(manual, 5 * LOCK_STEP_MS);
+    expect(damage).toBeGreaterThan(0);
+    expect(plantDamage({ ...manual, careSteps: [0, 5] }, 6 * LOCK_STEP_MS)).toBe(damage);
+    expect(plantDamage({ ...manual, autoWater: true }, 6 * LOCK_STEP_MS)).toBe(0);
   });
 });
