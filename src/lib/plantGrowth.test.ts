@@ -26,12 +26,12 @@ describe('living plant progression', () => {
     expect(plantMarks(base)).not.toEqual(plantMarks({ ...base, failed: true }));
   });
   it('produces finite geometry and valid opacity throughout the lifecycle', () => {
+    const invalid: string[] = [];
     for (const seed of [1, 42, 420]) for (let tick = 0; tick <= 130; tick++) {
       for (const mark of plantMarks({ seed, progress: tick / 100 })) {
-        expect(mark.d).not.toMatch(/NaN|Infinity/);
-        expect(mark.opacity).toBeGreaterThanOrEqual(0);
-        expect(mark.opacity).toBeLessThanOrEqual(1);
+        if (/NaN|Infinity/.test(mark.d) || !Number.isFinite(mark.opacity) || mark.opacity! < 0 || mark.opacity! > 1) invalid.push(`${seed}:${tick}:${mark.d}`);
       }
     }
+    expect(invalid).toEqual([]);
   });
 });

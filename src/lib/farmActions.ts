@@ -54,7 +54,7 @@ export function harvestPosition(state: GameState, positionId: string, now: numbe
     outcome: metrics.failed ? 'failed' : metrics.mature ? 'harvested' : 'early',
     grams: payout, progress: visualGrowth(position.startedAt, metrics.endsAt, now, metrics.failed, metrics.progress),
     water: metrics.waterLevel, damage: plantDamage(position, now),
-    training: position.training ?? 'natural', rendererVersion: 1,
+    training: position.training ?? 'natural', rendererVersion: 2,
   };
   return {
     ...state,

@@ -9,3 +9,9 @@
 @media(max-width:480px){.living-plant-milestones{grid-template-columns:repeat(3,minmax(0,1fr))}.living-plant-portrait svg{height:250px}}
 .plant-training{padding:16px;margin:16px 0;border:1px solid #7a986a66;border-radius:12px}.plant-training p,.plant-history>p{font-size:13px;line-height:1.5}.plant-training>div{display:flex;gap:8px;flex-wrap:wrap}.plant-training button{padding:10px 12px;border:1px solid #6b845c;border-radius:8px;background:#e3e7d0;color:#304d36;cursor:pointer}.plant-training button[aria-pressed=true]{background:#385c40;color:#fff3c9}.plant-training button:disabled{cursor:default;opacity:.7}.plant-training small{display:block;margin-top:12px;font-size:11px;line-height:1.5}.plant-history{margin-bottom:24px}.plant-history label{display:grid;gap:8px;font-size:13px}.plant-history select{max-width:100%;width:100%;padding:12px;border:1px solid #7a986a;border-radius:8px;background:#f3eed8;color:#304d36}
 .farm-panel .plant-history select{height:auto;min-height:44px;line-height:1.5;padding:10px;font-size:12px}
+.living-plant-portrait{background:radial-gradient(ellipse at 50% 60%,#304e37 0%,#142b20 48%,#09170f 100%);min-height:370px}
+.botanical-portrait{width:min(100%,370px);height:auto;display:block;filter:drop-shadow(0 10px 10px #0004);transform-origin:50% 91%;animation:botanical-breeze 7s ease-in-out infinite alternate}
+.botanical-portrait.archived{animation:none}.botanical-loading{position:absolute;bottom:14px;font-size:12px;color:#d6dfc6}
+@keyframes botanical-breeze{from{transform:rotate(-.35deg)}to{transform:rotate(.35deg)}}
+@media(prefers-reduced-motion:reduce){.botanical-portrait{animation:none}}
+@media(max-width:480px){.living-plant-portrait{min-height:300px}.botanical-portrait{max-height:330px;width:auto;max-width:100%}}

@@ -116,7 +116,7 @@ describe('seed cycle history and training', () => {
     const finished = harvestPosition(trained, 'crop-1', 4 * LOCK_STEP_MS);
     expect(finished.plantHistory).toHaveLength(1);
     const record = finished.plantHistory![0];
-    expect(record).toMatchObject({ nftId: 1, cycle: 1, outcome: 'harvested', training: 'wide', progress: 1, water: 100, rendererVersion: 1 });
+    expect(record).toMatchObject({ nftId: 1, cycle: 1, outcome: 'harvested', training: 'wide', progress: 1, water: 100, rendererVersion: 2 });
     const portrait = plantMarks({ ...record, seed: record.nftId });
     const restored = JSON.parse(JSON.stringify(finished)) as GameState;
     const next = plantPosition(restored, { ...crop(), id: 'second-cycle', startedAt: 5 * LOCK_STEP_MS }, state.plots[0]);

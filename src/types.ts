@@ -18,7 +18,7 @@ export interface PlantRecord {
   water: number;
   damage: number;
   training: PlantTraining;
-  rendererVersion: 1;
+  rendererVersion: 1 | 2;
 }
 
 export interface AccessNft {

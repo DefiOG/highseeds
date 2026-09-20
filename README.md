@@ -133,3 +133,10 @@ This implementation is local presentation, not onchain NFT metadata. The seed NF
 The farm journal saves each new completed, early-harvested or failed cycle with its seed identity, cycle number, final appearance inputs and actual game-inventory payout. Records survive local reloads and replanting; crops harvested before this feature cannot be reconstructed. The journal offers an explicit next-cycle planting flow for available seeds and empty beds. History remains browser-local and is removed by clearing/resetting the save.
 
 Players can select natural, wide or tall structure once per cycle before 52% growth. These choices are free and cosmetic; existing water/yield rules remain unchanged. Missed care leaves marks on older foliage even after watering restores current posture. The farm and saved portraits use the same appearance inputs. Saved records carry renderer version 1; future rendering migrations must preserve version-1 interpretation if historical appearance compatibility is required.
+
+
+### Botanical artwork v2
+
+New live plants use `src/assets/botanical-growth-atlas-v2.png`, an original generated botanical sprite atlas. The shared canvas renderer (`src/lib/botanicalPlant.ts`) aligns each sprite at its root, blends thirteen milestone images, and interpolates size, training proportions and care appearance. The detailed view includes subtle movement with reduced-motion support. The same renderer draws the farm beds. This is raster artwork driven by local game state, not an onchain image renderer or a continuous botanical geometry simulation.
+
+New cycle records use renderer version 2. Existing version-1 archived portraits keep the previous vector renderer. The development-only `/plant-art-review.html` page displays the thirteen artwork milestones together. The offline peer demo embeds the atlas so artwork needs no external host.

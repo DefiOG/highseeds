@@ -1,3 +1,4 @@
+import { drawBotanicalPlant, loadBotanicalAtlas } from './botanicalPlant';
 import type { PlantTraining } from '../types';
 import { plantMarks } from './plantGrowth';
 import { drawFarmerSprite } from './farmerArt';
@@ -77,6 +78,7 @@ function market(c: Ctx) {
 }
 
 export function createFarmBackground(): HTMLCanvasElement {
+  void loadBotanicalAtlas().catch(() => { /* Detailed portrait reports artwork loading errors. */ });
   const canvas=document.createElement('canvas'); canvas.width=WORLD_WIDTH; canvas.height=WORLD_HEIGHT;
   const c=canvas.getContext('2d')!; c.imageSmoothingEnabled=false;
   rect(c,0,0,960,640,'#789353'); const rng=random(420);
@@ -144,7 +146,7 @@ export function drawFarm(c:Ctx,background:HTMLCanvasElement,frame:SceneFrame) {
     if(crop.occupied){
       if(crop.water>=50)rect(c,p.x+1,p.y+1,54,41,'#332a2826');
       // One collectible, one plant. Its silhouette matches the detailed portrait.
-      plant(c,p.x+28,p.y+32,crop.progress,crop.color,crop.seed??1,crop.water,crop.failed,crop.training,crop.damage);
+      drawBotanicalPlant(c,p.x+28,p.y+35,.34,{progress:crop.progress,seed:crop.seed??1,water:crop.water,failed:crop.failed,training:crop.training,damage:crop.damage});
       if(crop.progress>=1&&!crop.failed){rect(c,p.x+22,p.y-19,14,10,'#f5d787');c.fillStyle='#4d653b';c.font='bold 9px monospace';c.textAlign='center';c.fillText('!',p.x+29,p.y-11);}
       else if(crop.water<50){rect(c,p.x+23,p.y-15,9,9,'#86cbd1');}
     } else {rect(c,p.x+25,p.y+16,6,2,'#b49a73');rect(c,p.x+27,p.y+14,2,6,'#b49a73');}
